@@ -1,0 +1,12 @@
+{
+  "python.pythonPath": "/Users/andysmith/Library/Caches/pypoetry/virtualenvs/primaldeep-4QE1GPml-py3.9/bin/python",
+  "python.linting.mypyEnabled": true,
+  "python.linting.mypyCategorySeverity.error": "Warning",
+  "python.linting.mypyArgs": [
+    "--ignore-missing-imports",
+    "--follow-imports=silent",
+    "--show-column-numbers",
+    "--disallow-untyped-defs",
+    "--disallow-untyped-calls"
+  ]
+}
