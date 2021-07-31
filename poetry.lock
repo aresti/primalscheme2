@@ -152,6 +152,14 @@ python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*"
 dev = ["pre-commit", "tox"]
 
 [[package]]
+name = "primer3-py"
+version = "0.6.1"
+description = "Python bindings for Primer3"
+category = "main"
+optional = false
+python-versions = "*"
+
+[[package]]
 name = "py"
 version = "1.10.0"
 description = "library with cross-python path, ini-parsing, io, code, log facilities"
@@ -248,7 +256,7 @@ python-versions = "*"
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.9"
-content-hash = "46946603d37d053e4309db578e1af1640e5699d1f64ffeb412819d88f416d520"
+content-hash = "b10acbdb38829eef9d215a5e23af6dfe6658aa5787129eac7d444f2850cd2fcc"
 
 [metadata.files]
 appdirs = [
@@ -326,6 +334,19 @@ pathspec = [
 pluggy = [
     {file = "pluggy-0.13.1-py2.py3-none-any.whl", hash = "sha256:966c145cd83c96502c3c3868f50408687b38434af77734af1e9ca461a4081d2d"},
     {file = "pluggy-0.13.1.tar.gz", hash = "sha256:15b2acde666561e1298d71b523007ed7364de07029219b604cf808bfa1c765b0"},
+]
+primer3-py = [
+    {file = "primer3-py-0.6.1.tar.gz", hash = "sha256:2d26671017d57ee37c5d5c430eb1545d8765f3d31782e9d7c0cdd9b5a22b2b8b"},
+    {file = "primer3_py-0.6.1-cp27-cp27m-macosx_10_6_x86_64.whl", hash = "sha256:b45c96632ffd2d573584f08c335ccae0007a6f1f06337fec3b68fd856f00f4f7"},
+    {file = "primer3_py-0.6.1-cp27-cp27m-win_amd64.whl", hash = "sha256:44020e414f77420028b3d8532077972d71d7f9a5f5114b192afa2010971c0057"},
+    {file = "primer3_py-0.6.1-cp35-cp35m-macosx_10_9_x86_64.whl", hash = "sha256:e44e068ca4f03c7df1dea0de2582c9d1fb83082d6dab4908d12fd680b0801bde"},
+    {file = "primer3_py-0.6.1-cp35-cp35m-win_amd64.whl", hash = "sha256:c31ff57ef835d538b44d9c7f8a268d0023b51ead2c4fef65936029e3c0cd5f38"},
+    {file = "primer3_py-0.6.1-cp36-cp36m-macosx_10_7_x86_64.whl", hash = "sha256:e155c76aaa42ea8dbb95629371f6fb2068da660bd8d934fa49dba50e9294963c"},
+    {file = "primer3_py-0.6.1-cp36-cp36m-win_amd64.whl", hash = "sha256:f1058150c6aa0b6a1c547c3437ebcac8d68130974b71a8635d79d992f8b25a29"},
+    {file = "primer3_py-0.6.1-cp37-cp37m-macosx_10_9_x86_64.whl", hash = "sha256:faa40b5034e474e8af3d5cebed2f91684eb144b2c25f534795b2e6ed2eb6ef40"},
+    {file = "primer3_py-0.6.1-cp37-cp37m-win_amd64.whl", hash = "sha256:0cc93abc0406e2c095c338bbdeaab001335748b91310e14b0148975aed45b338"},
+    {file = "primer3_py-0.6.1-cp38-cp38-macosx_10_9_x86_64.whl", hash = "sha256:4bdec6b5a3b39b5715eef968ecf47e419fea014080cca20e8f2ed6a97a7ca076"},
+    {file = "primer3_py-0.6.1-cp38-cp38-win_amd64.whl", hash = "sha256:d0076e42aa3d4c05adcc26bbea4635be0d7ce3b53e289b83326077d90e6659d6"},
 ]
 py = [
     {file = "py-1.10.0-py2.py3-none-any.whl", hash = "sha256:3b80836aa6d1feeaa108e046da6423ab8f6ceda6468545ae8d02d9d58d18818a"},
