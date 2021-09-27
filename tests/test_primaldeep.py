@@ -1,7 +1,7 @@
 import random
 
 from primaldeep import __version__
-from primaldeep.main import (
+from primaldeep.utils import (
     digest_seq,
     filter_unambiguous_kmers,
     AMBIGUOUS_DNA,

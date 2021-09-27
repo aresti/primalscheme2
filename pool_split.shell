@@ -1,0 +1,9 @@
+grep POOL_0 output/scheme.primer.bed > primer0.bed
+grep POOL_1 output/scheme.primer.bed > primer1.bed
+grep POOL_2 output/scheme.primer.bed > primer2.bed
+grep POOL_3 output/scheme.primer.bed > primer3.bed
+grep POOL_0 output/scheme.insert.bed > insert0.bed
+grep POOL_1 output/scheme.insert.bed > insert1.bed
+grep POOL_2 output/scheme.insert.bed > insert2.bed
+grep POOL_3 output/scheme.insert.bed > insert3.bed
+
