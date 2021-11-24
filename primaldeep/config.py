@@ -1,10 +1,27 @@
+"""
+PrimalScheme: a primer3 wrapper for designing multiplex primer schemes
+
+Copyright (C) 2021 Joshua Quick and Andrew Smith
+www.github.com/aresti/primalscheme
+
+This module contains the Config class.
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>
+"""
+
 import math
 import pathlib
 
 from typing import Any
-
-UNAMBIGUOUS_DNA = "ACGT"
-AMBIGUOUS_DNA = UNAMBIGUOUS_DNA + "RYWSMKHBVDN-"
 
 
 class Config:
@@ -18,10 +35,9 @@ class Config:
     prefix = "scheme"
     force = False
 
-    amplicon_size_min = 380
-    amplicon_size_max = 420
-    coverage = 2
-    packing = 0.5
+    amplicon_size_min = 300
+    amplicon_size_max = 400
+    min_overlap = 0
     high_gc = False
 
     primer_size_default_min = 19
@@ -44,11 +60,16 @@ class Config:
     dv_conc = 2.0
     dntp_conc = 0.8
     dna_conc = 15.0
+    dimer_max_tm = -10.0
+    dimer_min_identity = 0.8
 
     def __init__(self, **kwargs: Any) -> None:
         for key, value in kwargs.items():
             if hasattr(self, key):
                 setattr(self, key, value)
+
+        self.amplicon_size_diff = self.amplicon_size_max - self.amplicon_size_min
+        self.region_flank_size = math.floor(self.amplicon_size_diff / 2)
 
         if self.high_gc:
             self.primer_size_min = self.primer_size_hgc_min
@@ -62,12 +83,6 @@ class Config:
             self.primer_size_opt = self.primer_size_default_opt
             self.primer_gc_min = self.primer_gc_default_min
             self.primer_gc_max = self.primer_gc_default_max
-
-        # Derived
-        self.amplicon_size_var = math.ceil(
-            (self.amplicon_size_max - self.amplicon_size_min) / 2
-        )
-        self.insert_size_max = self.amplicon_size_max - (2 * self.primer_size_min)
 
     def __str__(self) -> str:
         return str(self.__dict__)
