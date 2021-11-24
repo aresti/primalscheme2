@@ -21,20 +21,17 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>
 from operator import attrgetter
 from typing import Callable, Optional, Sequence
 
-from Bio import SeqRecord
-from tqdm import tqdm
+from Bio import SeqRecord  # type: ignore
 
+from primaldeep.exceptions import NoSuitablePrimersError
 from primaldeep.primer import Kmer, Primer, PrimerDirection, PrimerPair
 from primaldeep.scheme import Scheme
-from primaldeep.utils import first
 from primaldeep.config import Config
 
 
 class OverlapPriorityScheme(Scheme):
-    def __init__(
-        self, ref: SeqRecord, kmers: Sequence[Kmer], cfg: Config, progress: tqdm
-    ):
-        super().__init__(ref, kmers, cfg, progress)
+    def __init__(self, ref: SeqRecord, kmers: list[Kmer], cfg: Config):
+        super().__init__(ref, kmers, cfg)
 
         # Init pools
         self.pools: tuple[list[PrimerPair], list[PrimerPair]] = ([], [])
@@ -67,7 +64,9 @@ class OverlapPriorityScheme(Scheme):
 
     @property
     def _prev_pair_same_pool(self) -> Optional[PrimerPair]:
-        """Return the previous pair in the same pool (last but one pair in the scheme)."""
+        """
+        Return the previous pair in the same pool (last but one pair in the scheme).
+        """
         return self._this_pool[-1] if len(self._this_pool) else None
 
     def _kmers_right_of_pair(self, pair: PrimerPair) -> Sequence[Kmer]:
@@ -112,11 +111,19 @@ class OverlapPriorityScheme(Scheme):
         return sorted(overlapping_kmers, key=attrgetter("end"), reverse=True)
 
     @property
-    def _non_overlapping_forward_candidates(self) -> Sequence[Kmer]:
+    def _non_overlapping_forward_candidates(self) -> list[Kmer]:
         """Return all non-overlapping, forward candidates, relative to prev_pair."""
         if self._prev_pair:
             return [k for k in self.kmers if k.start >= self._prev_pair.forward.end]
         return self.kmers
+
+    @property
+    def _forward_candidates(self) -> Sequence[Kmer]:
+        """Return all forward candidates, ordered preferentially"""
+        return (
+            self._overlapping_forward_candidates
+            + self._non_overlapping_forward_candidates
+        )
 
     def interaction_checker_factory(self) -> Callable[[Kmer], bool]:
         """
@@ -132,48 +139,27 @@ class OverlapPriorityScheme(Scheme):
 
         return inner_func
 
-    def _run(self) -> None:
-        """Create a an overlap-priority scheme."""
-        self.progress.total = len(self.ref.seq)
+    def _find_next_pair(self) -> PrimerPair:
+        """Find the next PrimerPair for the scheme."""
+        interaction_checker = self.interaction_checker_factory()
 
-        while True:
-            # Progress
-            self.progress.update(self._prev_pair.end if self._prev_pair else 0)
-
-            # Obtain interactions checker func
-            interaction_checker = self.interaction_checker_factory()
-
-            # Find forward primer
-            # First, try for an overlap
-            try:
-                fwd = first(
-                    self._overlapping_forward_candidates, condition=interaction_checker
-                )
-            except StopIteration:
-                # Next, try gapping
-                try:
-                    fwd = first(
-                        self._non_overlapping_forward_candidates,
-                        condition=interaction_checker,
-                    )
-                except StopIteration:
-                    print("Nothing!")
-                    break
-
-            # Find suitable pair
-            try:
+        for fwd in self._forward_candidates:
+            if interaction_checker(fwd):
                 candidate_pairs = self._find_pairs(
                     Primer(fwd.seq, fwd.start, PrimerDirection.FORWARD)
                 )
-                pair = first(
-                    candidate_pairs, condition=lambda p: interaction_checker(p.reverse)
-                )
-            except StopIteration:
-                print("end")
-                break
+                for pair in candidate_pairs:
+                    if interaction_checker(pair.reverse):
+                        return pair
 
-            # Add to pool, switch to next
-            self._this_pool.append(pair)
+        raise NoSuitablePrimersError
+
+    def _run(self) -> None:
+        """Create a an overlap-priority scheme."""
+
+        while True:
+            try:
+                self._this_pool.append(self._find_next_pair())
+            except NoSuitablePrimersError:
+                return
             self._pool_num = (self._pool_num + 1) % 2
-
-        self.progress.reset()

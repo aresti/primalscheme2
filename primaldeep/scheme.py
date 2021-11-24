@@ -1,109 +1,167 @@
 import csv
-import math
+from pathlib import Path
+from typing import Sequence
 
-from .config import Config
-from .region import Region
-from .types import PrimerDirection
+from jinja2 import Environment, PackageLoader, select_autoescape
+
+from primaldeep.config import Config
+from primaldeep.datauri import get_data_uri
+from primaldeep.dna import reverse_complement, SeqRecordProtocol
+from primaldeep.primer import Kmer, Primer, PrimerDirection, PrimerPair
 
 
-class DeepScheme:
-    """A scheme with n pools"""
-
-    def __init__(self, fasta: tuple[str, str], cfg: Config) -> None:
-        self.fasta = fasta
+class Scheme:
+    def __init__(self, ref: SeqRecordProtocol, kmers: list[Kmer], cfg: Config):
+        self.ref = ref
+        self.kmers = kmers
         self.cfg = cfg
+        self.pools: Sequence[Sequence[PrimerPair]] = []
 
-        self.ref = fasta[1]
-        self.ref_id = fasta[0]
-        max_insert_percent = cfg.amplicon_size_max / cfg.insert_size_max
-        self.pools: list[list[Region]] = [
-            []
-            for _ in range(math.ceil((cfg.coverage / cfg.packing) * max_insert_percent))
+    def _find_pairs(
+        self,
+        forward_primer: Primer,
+    ) -> Sequence[PrimerPair]:
+        """
+        For a given forward primer, return all possible PrimerPairs, sorted by reverse
+        amplicon length.
+        """
+        window_left = (
+            forward_primer.start + self.cfg.amplicon_size_min - self.cfg.primer_size_max
+        )
+        window_right = forward_primer.start + self.cfg.amplicon_size_max - 1
+        reverse_candidates = [
+            k for k in self.kmers if k.start >= window_left and k.end <= window_right
         ]
-        self.region_size = int(1 / cfg.packing * cfg.amplicon_size_max)
-        self.pool_offset = int(self.region_size / len(self.pools))
+        candidate_pairs = [
+            PrimerPair(
+                forward_primer,
+                Primer(reverse_complement(r.seq), r.end, PrimerDirection.REVERSE),
+            )
+            for r in reverse_candidates
+        ]
+        candidate_pairs = [
+            pair for pair in candidate_pairs if len(pair) >= self.cfg.amplicon_size_min
+        ]
+        candidate_pairs.sort(key=len, reverse=True)
+        return candidate_pairs
 
-    def run(self) -> None:
-        for n, pool in enumerate(self.pools):
-            offset = n * self.pool_offset
-            print(f"Pool {n}, offset {offset}")
-            for i, start in enumerate(range(offset, len(self.ref), self.region_size)):
-                print(f"Region {i} starting at {start}")
-                ref_slice = self.ref[
-                    start : min((start + self.region_size), len(self.ref))
-                ]
-                if len(ref_slice) >= self.cfg.amplicon_size_max * 2:
-                    region = Region(
-                        ref_slice,
-                        start,
-                        self.cfg,
-                    )
-                    print(region)
-                    pool.append(region)
-                else:
-                    print("Pool end")
-
-    def __str__(self) -> str:
-        return (
-            f"DeepScheme: {self.fasta[0]}, region size: {self.region_size} ({self.cfg})"
+    @property
+    def primer_pairs(self) -> list[PrimerPair]:
+        return sorted(
+            [pair for pool in self.pools for pair in pool],
+            key=lambda p: p.forward.start,
         )
 
+    @property
+    def primer_bed_rows(
+        self,
+    ) -> Sequence[tuple[str, int, int, str, int, str, str]]:
+        """Format primer BED rows."""
+        rows: list[tuple[str, int, int, str, int, str, str]] = []
+        ref_id = self.ref.id
+        primer_name_template = self.cfg.prefix + "_{}_{}"
+
+        for n, pair in enumerate(self.primer_pairs):
+            pool_num = n % len(self.pools) + 1
+            for direction in PrimerDirection:
+                name = primer_name_template.format(n, direction.name)
+                p: Primer = getattr(pair, direction.name.lower())
+                start = p.start if p.direction == PrimerDirection.FORWARD else p.end
+                end = p.end if p.direction == PrimerDirection.FORWARD else p.start
+                row = (
+                    ref_id,
+                    start,
+                    end + 1,  # BED is half-open
+                    name,
+                    pool_num,
+                    direction.value,
+                    p.seq,
+                )
+                rows.append(row)
+
+        return rows
+
+    @property
+    def primer_bed(self) -> str:
+        rows = ["\t".join(map(str, row)) for row in self.primer_bed_rows]
+        return "\n".join(rows)
+
     def write_primer_bed(self) -> None:
-        """Write primer BED file."""
         filepath = self.cfg.output / f"{self.cfg.prefix}.primer.bed"
 
+        with filepath.open("w") as fh:
+            cw = csv.writer(fh, delimiter="\t")
+            cw.writerows(self.primer_bed_rows)
+
+    @property
+    def primer_gff(self) -> str:
         rows = []
-        ref_id = self.ref_id
-        primer_name_template = "POOL_{}_REGION_{}_{}"
+        ref_id = self.ref.id
+        primer_name_template = self.cfg.prefix + "_{}_{}"
 
-        for pool_num, pool in enumerate(self.pools):
-            for region_num, region in enumerate(pool):
-                for direction in PrimerDirection:
-                    name = primer_name_template.format(
-                        pool_num, region_num, direction.name
-                    )
-                    p = getattr(region.top_pair, direction.name.lower())
-                    start = p.start if p.direction == PrimerDirection.FORWARD else p.end
-                    end = p.end if p.direction == PrimerDirection.FORWARD else p.start
-                    rows.append(
-                        [
-                            ref_id,
-                            start,
-                            end + 1,  # BED is half-open
-                            name,
-                            pool_num,
-                            direction.value,
-                            p.seq,
-                        ]
-                    )
+        for n, pair in enumerate(self.primer_pairs):
+            pool_num = n % len(self.pools) + 1
+            color = "#274e13" if pool_num == 1 else "#16537e"
+            rows.append(
+                [
+                    ref_id,
+                    "primalscheme",
+                    "mRNA",
+                    pair.start + 1,
+                    pair.end + 1,
+                    ".",
+                    ".",
+                    ".",
+                    f"ID=AMP{n+1};Color={color}",
+                ]
+            )
+            for direction in PrimerDirection:
+                name = primer_name_template.format(n, direction.name)
+                p = getattr(pair, direction.name.lower())
+                start = p.start if p.direction == PrimerDirection.FORWARD else p.end
+                end = p.end if p.direction == PrimerDirection.FORWARD else p.start
+                rows.append(
+                    [
+                        ref_id,
+                        "primalscheme",
+                        "exon",
+                        start + 1,
+                        end + 1,
+                        ".",
+                        ".",
+                        ".",
+                        f"ID={name};Name={name};Parent=AMP{n+1};Note=POOL_{pool_num}",
+                    ]
+                )
+        tsv_rows = ["\t".join(map(str, row)) for row in rows]
+        return "##gff-version 3\n" + "\n".join(tsv_rows)
 
-            with filepath.open("w") as fh:
-                cw = csv.writer(fh, delimiter="\t")
-                cw.writerows(rows)
+    def write_primer_gff(self) -> None:
+        filepath = self.cfg.output / f"{self.cfg.prefix}.primer.gff"
 
-    def write_insert_bed(self) -> None:
-        """Write insert BED file."""
-        filepath = self.cfg.output / f"{self.cfg.prefix}.insert.bed"
+        with filepath.open("w") as fh:
+            fh.write(self.primer_gff)
 
-        rows = []
-        ref_id = self.ref_id
-        insert_name_template = "POOL_{}_REGION_{}"
+    @property
+    def report_filepath(self) -> Path:
+        """Filepath for scheme HTML report."""
+        return self.cfg.output / f"{self.cfg.prefix}_report.html"
 
-        for pool_num, pool in enumerate(self.pools):
-            for region_num, region in enumerate(pool):
-                if region.insert:
-                    name = insert_name_template.format(pool_num, region_num)
-                    insert = region.insert
-                    rows.append(
-                        [
-                            ref_id,
-                            insert.start,
-                            insert.end + 1,  # BED is half-open
-                            name,
-                            "+",
-                        ]
-                    )
+    def write_report(self) -> None:
+        """Write HTML report and associated JSON"""
 
-            with filepath.open("w") as fh:
-                cw = csv.writer(fh, delimiter="\t")
-                cw.writerows(rows)
+        # Data JSON
+        data = {
+            "reference": get_data_uri(self.ref.format("fasta")),
+            "primerTrack": get_data_uri(self.primer_gff),
+        }
+
+        # HTML Template
+        jinja_env = Environment(
+            loader=PackageLoader("primaldeep"), autoescape=select_autoescape()
+        )
+        template = jinja_env.get_template("report_template.html")
+        rendered = template.render(data=data)
+
+        with self.report_filepath.open("w") as fh:
+            fh.write(rendered)
