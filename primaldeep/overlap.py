@@ -23,7 +23,7 @@ from typing import Callable, Optional, Sequence
 
 from Bio import SeqRecord  # type: ignore
 
-from primaldeep.exceptions import NoSuitablePrimersError
+from primaldeep.exceptions import NoSuitablePrimers
 from primaldeep.primer import Kmer, Primer, PrimerDirection, PrimerPair
 from primaldeep.scheme import Scheme
 from primaldeep.config import Config
@@ -40,22 +40,29 @@ class OverlapPriorityScheme(Scheme):
         self._run()
 
     @property
+    def _pool_index(self) -> int:
+        """
+        Keeps track of the 'current' pool index while the scheme is running.
+        i.e., the index of the pool to which the next PrimerPair will be appened.
+        """
+        return 1 if len(self.pools[0]) > len(self.pools[1]) else 0
+
+    @property
     def _this_pool(self) -> list[PrimerPair]:
-        """Return the pool that the next primer pair will be assigned to."""
-        return self.pools[self._pool_num]
+        """Return 'this' pool (to which the next PrimerPair will be appended)."""
+        return self.pools[self._pool_index]
 
     @property
     def _this_pool_primers(self) -> list[Primer]:
         """
-        Return a flat list of the primers in the pool that the next primer pair will be
-        assigned to.
+        Return a flat list of the primers in this pool.
         """
         return [p for pp in self._this_pool for p in (pp.forward, pp.reverse)]
 
     @property
     def _other_pool(self) -> list[PrimerPair]:
         """Return the pool that is *not* the current pool."""
-        return self.pools[(self._pool_num + 1) % 2]
+        return self.pools[(self._pool_index + 1) % 2]
 
     @property
     def _prev_pair(self) -> Optional[PrimerPair]:
@@ -88,7 +95,6 @@ class OverlapPriorityScheme(Scheme):
 
         return [k for k in kmers if maintains_overlap(k)]
 
-    @property
     def _overlapping_forward_candidates(self) -> list[Kmer]:
         """
         Return all overlapping, forward candidates, relative to prev_pair,
@@ -110,19 +116,17 @@ class OverlapPriorityScheme(Scheme):
             )
         return sorted(overlapping_kmers, key=attrgetter("end"), reverse=True)
 
-    @property
     def _non_overlapping_forward_candidates(self) -> list[Kmer]:
         """Return all non-overlapping, forward candidates, relative to prev_pair."""
         if self._prev_pair:
             return [k for k in self.kmers if k.start >= self._prev_pair.forward.end]
         return self.kmers
 
-    @property
     def _forward_candidates(self) -> Sequence[Kmer]:
-        """Return all forward candidates, ordered preferentially"""
+        """Return all forward candidates (overlapping first, then gapped)"""
         return (
-            self._overlapping_forward_candidates
-            + self._non_overlapping_forward_candidates
+            self._overlapping_forward_candidates()
+            + self._non_overlapping_forward_candidates()
         )
 
     def interaction_checker_factory(self) -> Callable[[Kmer], bool]:
@@ -143,16 +147,16 @@ class OverlapPriorityScheme(Scheme):
         """Find the next PrimerPair for the scheme."""
         interaction_checker = self.interaction_checker_factory()
 
-        for fwd in self._forward_candidates:
+        for fwd in self._forward_candidates():
             if interaction_checker(fwd):
-                candidate_pairs = self._find_pairs(
+                candidate_pairs = self.reverse_candidate_pairs(
                     Primer(fwd.seq, fwd.start, PrimerDirection.FORWARD)
                 )
                 for pair in candidate_pairs:
                     if interaction_checker(pair.reverse):
                         return pair
 
-        raise NoSuitablePrimersError
+        raise NoSuitablePrimers
 
     def _run(self) -> None:
         """Create a an overlap-priority scheme."""
@@ -160,6 +164,5 @@ class OverlapPriorityScheme(Scheme):
         while True:
             try:
                 self._this_pool.append(self._find_next_pair())
-            except NoSuitablePrimersError:
-                return
-            self._pool_num = (self._pool_num + 1) % 2
+            except NoSuitablePrimers:
+                break
