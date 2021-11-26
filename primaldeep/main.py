@@ -1,18 +1,60 @@
+"""
+PrimalScheme: a primer3 wrapper for designing multiplex primer schemes
+
+Copyright (C) 2020 Joshua Quick and Andrew Smith
+www.github.com/aresti/primalscheme
+
+This module contains the main cli entrypoint for primalscheme.
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>
+"""
 import click
+import os
 import pathlib
 import sys
+import webbrowser
 
 from typing import Any, TextIO
+from operator import attrgetter
+from pathlib import Path
 
-from .config import Config
-from .scheme import DeepScheme
-from .utils import check_or_create_outpath, simple_fasta_parser
+from Bio import SeqIO  # type: ignore
+
+from primaldeep.config import Config
+from primaldeep.primer import (
+    Kmer,
+    digest_seq,
+    kmer_thermo_check,
+    filter_unambiguous_kmers,
+)
+from primaldeep.overlap import OverlapPriorityScheme
+
+
+def check_or_create_outpath(path: pathlib.Path, force: bool = False) -> pathlib.Path:
+    """
+    Check for an existing output dir, require --force to overwrite.
+    Create dir if required, return Path obj.
+    """
+    if path.exists() and not force:
+        raise IOError("Directory exists add --force to overwrite")
+
+    path.mkdir(exist_ok=True)
+    return path
 
 
 @click.command()
-@click.argument("input", type=click.File("rt"))
-@click.argument(
-    "output",
+@click.argument("input", nargs=-1, type=click.File("rt"))
+@click.option(
+    "--output",
     type=click.Path(
         exists=False,
         file_okay=False,
@@ -32,13 +74,8 @@ from .utils import check_or_create_outpath, simple_fasta_parser
     type=click.IntRange(100, 2000),
     default=Config.amplicon_size_max,
 )
-@click.option(
-    "--coverage", type=click.IntRange(0), default=Config.coverage, prompt=True
-)
 @click.option("--force/--no-force", default=Config.force)
-@click.option(
-    "--packing", type=click.FloatRange(0.1, 1.0), default=Config.packing, prompt=True
-)
+@click.option("--strategy", type=click.Choice(("o", "p")), default="o")
 @click.option(
     "--prefix",
     type=click.STRING,
@@ -48,29 +85,57 @@ from .utils import check_or_create_outpath, simple_fasta_parser
     show_default=True,
 )
 def main(
-    input: TextIO,
+    input: list[TextIO],
     **kwargs: Any,
 ) -> None:
-    fasta = list(simple_fasta_parser(input))[0]
+
+    if not len(input):
+        # noop  - see note in click docs
+        # https://click.palletsprojects.com/en/7.x/arguments/?highlight=nargs#variadic-arguments
+        sys.exit()
+
+    fastas = [record for file in input for record in SeqIO.parse(file, "fasta")]
     cfg = Config(**kwargs)
-    scheme = DeepScheme(fasta, cfg)
-    print(scheme)
 
-    # Validate output path
-    try:
-        cfg.output = check_or_create_outpath(cfg.output, force=cfg.force)
-    except IOError as e:
-        click.echo(
-            click.style(
-                f"Error: {e}",
-                fg="red",
+    if not cfg.output.is_absolute():
+        # Make output path absolute
+        cfg.output = Path(os.getcwd()) / cfg.output
+
+    primary_ref = fastas[0]
+    passing_kmers: list[Kmer] = []
+
+    # Digestion
+    kmer_sizes = range(cfg.primer_size_min, cfg.primer_size_max + 1)
+
+    with click.progressbar(kmer_sizes, label="Digesting reference") as sizes:
+        for size in sizes:
+            digested = [
+                Kmer(k.seq, k.start) for k in digest_seq(str(primary_ref.seq), size)
+            ]
+            unambiguous = filter_unambiguous_kmers(digested)
+            passing_kmers.extend(k for k in unambiguous if kmer_thermo_check(k, cfg))
+
+    passing_kmers.sort(key=attrgetter("start"))
+    click.echo(f"Found {len(passing_kmers)} non-ambiguous kmers passing thermo filter")
+
+    if kwargs["strategy"] == "o":
+        with click.progressbar(
+            label="Designing scheme", length=len(primary_ref.seq)
+        ) as pbar:
+            scheme = OverlapPriorityScheme(
+                primary_ref,
+                kmers=passing_kmers,
+                cfg=cfg,
+                pbar=pbar,
             )
-        )
-        sys.exit(1)
 
-    scheme.run()
-    scheme.write_primer_bed()
-    scheme.write_insert_bed()
+        scheme.write_primer_bed()
+        scheme.write_primer_gff()
+        scheme.write_report()
+
+        report_uri = scheme.report_filepath.as_uri()
+        click.echo(report_uri)
+        webbrowser.open(report_uri)
 
 
 if __name__ == "__main__":

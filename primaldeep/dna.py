@@ -19,10 +19,12 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>
 """
 
+import re
+
 from itertools import groupby
 from typing_extensions import Protocol
 
-from primer3 import calcTm as p3_calc_tm, calcHairpin as p3_calc_hairpin
+from primer3 import calcTm as p3_calc_tm, calcHairpin as p3_calc_hairpin  # type: ignore
 
 UNAMBIGUOUS_DNA = "ACGT"
 AMBIGUOUS_DNA = UNAMBIGUOUS_DNA + "RYWSMKHBVDN-"
@@ -44,6 +46,23 @@ AMBIGUOUS_DNA_COMPLEMENT = {
     "X": "X",
     "N": "N",
 }
+
+CIGAR_REGEX = re.compile(r"(?P<len>\d+)(?P<op>\D+)")
+
+
+class SeqProtocol(Protocol):
+    seq: str
+
+    def __len__(self) -> int:
+        ...
+
+
+class SeqRecordProtocol(Protocol):
+    id: str
+    seq: SeqProtocol
+
+    def format(self, format: str) -> str:
+        ...
 
 
 class ThermoConfig(Protocol):
