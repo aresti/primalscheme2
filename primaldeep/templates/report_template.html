@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PrimalScheme Report</title>
+    <script src="https://cdn.jsdelivr.net/npm/igv@2.10.4/dist/igv.min.js"></script>
+  </head>
+  <body>
+    <h1>PrimalScheme Output</h1>
+
+    <div id="igv-container"></div>
+
+    <div id="data" style="display:none">{{ data|tojson }}</div>
+    <script>
+    const igvDiv = document.getElementById("igv-container");
+      const data = JSON.parse(document.getElementById("data").textContent);
+      const options = {
+        reference: { fastaURL: data.reference },
+        tracks: {
+          name: "Primers",
+          type: "annotation",
+          format: "gff3",
+          sourceType: "file",
+          url: data.primerTrack,
+          displayMode: "expanded",
+          displayMode: "EXPANDED",
+          autoHeight: true
+        }
+      };
+      igv
+        .createBrowser(igvDiv, options)
+        .then(() => console.log("created"))
+        .catch((e) => console.log(e));
+    </script>
+  </body>
+</html>
