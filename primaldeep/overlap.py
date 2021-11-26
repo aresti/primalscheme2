@@ -25,15 +25,16 @@ from Bio import SeqRecord  # type: ignore
 
 from primaldeep.exceptions import NoSuitablePrimers
 from primaldeep.primer import Kmer, Primer, PrimerDirection, PrimerPair
-from primaldeep.scheme import Scheme
+from primaldeep.scheme import Scheme, ProgressBar
 from primaldeep.config import Config
 
 
 class OverlapPriorityScheme(Scheme):
-    def __init__(self, ref: SeqRecord, kmers: list[Kmer], cfg: Config):
-        super().__init__(ref, kmers, cfg)
+    def __init__(
+        self, ref: SeqRecord, kmers: list[Kmer], cfg: Config, pbar: ProgressBar
+    ):
+        super().__init__(ref, kmers, cfg, pbar)
 
-        # Init pools
         self.pools: tuple[list[PrimerPair], list[PrimerPair]] = ([], [])
         self._pool_num = 0
 
@@ -75,6 +76,13 @@ class OverlapPriorityScheme(Scheme):
         Return the previous pair in the same pool (last but one pair in the scheme).
         """
         return self._this_pool[-1] if len(self._this_pool) else None
+
+    @property
+    def progress(self) -> int:
+        """
+        Return the end position of prev_pair, representing progress.
+        """
+        return self._prev_pair.end if self._prev_pair else 0
 
     def _kmers_right_of_pair(self, pair: PrimerPair) -> Sequence[Kmer]:
         """Return all kmers to the right of a primer pair."""
@@ -161,8 +169,12 @@ class OverlapPriorityScheme(Scheme):
     def _run(self) -> None:
         """Create a an overlap-priority scheme."""
 
+        last_progress = 0
+
         while True:
             try:
                 self._this_pool.append(self._find_next_pair())
+                self.pbar.update(self.progress - last_progress)
+                last_progress = self.progress
             except NoSuitablePrimers:
                 break

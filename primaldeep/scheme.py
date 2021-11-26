@@ -20,7 +20,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>
 
 import csv
 from pathlib import Path
-from typing import Sequence
+from typing import Sequence, Protocol
 
 from jinja2 import Environment, PackageLoader, select_autoescape
 
@@ -30,11 +30,20 @@ from primaldeep.dna import reverse_complement, SeqRecordProtocol
 from primaldeep.primer import Kmer, Primer, PrimerDirection, PrimerPair
 
 
+class ProgressBar(Protocol):
+    def update(self, n_steps: int, current_item: None = None) -> None:
+        ...
+
+
 class Scheme:
-    def __init__(self, ref: SeqRecordProtocol, kmers: list[Kmer], cfg: Config):
+    def __init__(
+        self, ref: SeqRecordProtocol, kmers: list[Kmer], cfg: Config, pbar: ProgressBar
+    ):
         self.ref = ref
         self.kmers = kmers
         self.cfg = cfg
+        self.pbar = pbar
+
         self.pools: Sequence[Sequence[PrimerPair]] = []
 
     def reverse_primer_window_start(self, fwd: Primer) -> int:
