@@ -38,8 +38,6 @@ class OverlapPriorityScheme(Scheme):
         self.pools: tuple[list[PrimerPair], list[PrimerPair]] = ([], [])
         self._pool_num = 0
 
-        self._run()
-
     @property
     def _pool_index(self) -> int:
         """
@@ -86,7 +84,7 @@ class OverlapPriorityScheme(Scheme):
 
     def _kmers_right_of_pair(self, pair: PrimerPair) -> Sequence[Kmer]:
         """Return all kmers to the right of a primer pair."""
-        return [k for k in self.kmers if k.start > pair.reverse.start]
+        return [k for k in self.kmers if k.start >= pair.reverse.end]
 
     def _kmers_maintaining_overlap(
         self, kmers: Sequence[Kmer], pair: PrimerPair
@@ -97,7 +95,7 @@ class OverlapPriorityScheme(Scheme):
 
         def maintains_overlap(kmer: Kmer) -> bool:
             return (
-                kmer.end + self.cfg.min_overlap < pair.reverse.end
+                kmer.end + self.cfg.min_overlap < pair.reverse.start
                 and kmer.start > pair.forward.start
             )
 
@@ -137,44 +135,179 @@ class OverlapPriorityScheme(Scheme):
             + self._non_overlapping_forward_candidates()
         )
 
-    def interaction_checker_factory(self) -> Callable[[Kmer], bool]:
+    def interaction_checker_factory(
+        self, existing_pairs: Optional[list[PrimerPair]] = None
+    ) -> Callable[[Kmer], bool]:
         """
         Return a function that performs the required interaction checks for a candidate
         Kmer against all previously selected primers in the current pool.
         """
 
+        check_primers = self._this_pool_primers
+        if existing_pairs is not None:
+            check_primers += [
+                p for pp in existing_pairs for p in (pp.forward, pp.reverse)
+            ]
+
         def inner_func(kmer: Kmer) -> bool:
             return not (
                 kmer.interacts_with([kmer], self.cfg)
-                or kmer.interacts_with(self._this_pool_primers, self.cfg)
+                or kmer.interacts_with(check_primers, self.cfg)
             )
 
         return inner_func
 
-    def _find_next_pair(self) -> PrimerPair:
+    def _find_pair(
+        self,
+        next_pair: Optional[PrimerPair] = None,
+        same_pool_pairs: Optional[list[PrimerPair]] = None,
+    ) -> PrimerPair:
         """Find the next PrimerPair for the scheme."""
-        interaction_checker = self.interaction_checker_factory()
+        interaction_checker = self.interaction_checker_factory(
+            existing_pairs=same_pool_pairs
+        )
 
         for fwd in self._forward_candidates():
             if interaction_checker(fwd):
-                candidate_pairs = self.reverse_candidate_pairs(
-                    Primer(fwd.seq, fwd.start, PrimerDirection.FORWARD)
-                )
+                try:
+                    candidate_pairs = self.reverse_candidate_pairs(
+                        Primer(fwd.seq, fwd.start, PrimerDirection.FORWARD),
+                        next_pair=next_pair,
+                    )
+                except NoSuitablePrimers:
+                    continue
                 for pair in candidate_pairs:
                     if interaction_checker(pair.reverse):
                         return pair
 
         raise NoSuitablePrimers
 
-    def _run(self) -> None:
+    def execute(self) -> None:
         """Create a an overlap-priority scheme."""
 
         last_progress = 0
 
         while True:
             try:
-                self._this_pool.append(self._find_next_pair())
+                self._this_pool.append(self._find_pair())
                 self.pbar.update(self.progress - last_progress)
                 last_progress = self.progress
             except NoSuitablePrimers:
                 break
+
+    def _replacement_fwd_kmers(self, pair: PrimerPair) -> list[Kmer]:
+        """
+        Return replacement forward candidate Kmers for an existing pair.
+        """
+        reverse = pair.reverse
+        window = (
+            reverse.end - self.cfg.amplicon_size_max - 1,
+            reverse.end - self.cfg.amplicon_size_min,
+        )
+        return [
+            k
+            for k in self._overlapping_forward_candidates()
+            if k.start >= window[0] and k.end <= window[1]
+        ]
+
+    def _replacement_fwd_pairs(self, pair: PrimerPair) -> list[PrimerPair]:
+        rev = pair.reverse
+        pairs = [
+            PrimerPair(Primer(kmer.seq, kmer.start, PrimerDirection.FORWARD), rev)
+            for kmer in self._replacement_fwd_kmers(pair)
+        ]
+
+        # Sort by deviation from target amplicon size
+        pairs.sort(key=lambda p: abs(self.cfg.amplicon_size_target - p.amplicon_size))
+        return pairs
+
+    def _find_replacement_fwd(
+        self, pair: PrimerPair, existing_pairs: list[PrimerPair]
+    ) -> PrimerPair:
+        interaction_check = self.interaction_checker_factory(
+            existing_pairs=existing_pairs
+        )
+        for candidate in self._replacement_fwd_pairs(pair):
+            if interaction_check(candidate.forward):
+                return candidate
+        raise NoSuitablePrimers
+
+    def _replacement_rev_pairs(
+        self, pair: PrimerPair, next_pair: PrimerPair
+    ) -> list[PrimerPair]:
+        fwd = pair.forward
+        return [
+            pp
+            for pp in self.reverse_candidate_pairs(fwd)
+            if pp.reverse.start >= next_pair.forward.end
+        ]
+
+    def _find_replacement_rev(
+        self,
+        pair: PrimerPair,
+        next_pair: Optional[PrimerPair] = None,
+        existing_pairs: Optional[list[PrimerPair]] = None,
+    ) -> PrimerPair:
+        interaction_check = self.interaction_checker_factory(
+            existing_pairs=existing_pairs
+        )
+        if next_pair is None:
+            candidate_pairs = self.reverse_candidate_pairs(pair.forward)
+        else:
+            candidate_pairs = self._replacement_rev_pairs(pair, next_pair)
+        for candidate in candidate_pairs:
+            if interaction_check(candidate.reverse):
+                return candidate
+        raise NoSuitablePrimers
+
+    def repair(self, existing_pools: tuple[list[PrimerPair], list[PrimerPair]]) -> None:
+        """Repair an existing scheme against a new reference."""
+
+        amplicon_num = 0
+        this_existing_pool = existing_pools[self._pool_index]
+        other_existing_pool = existing_pools[(self._pool_index + 1) % 2]
+
+        while len(this_existing_pool):
+            next_pair: Optional[PrimerPair] = (
+                other_existing_pool[0] if len(other_existing_pool) else None
+            )
+            pair = this_existing_pool.pop(0)
+            new_pair = None
+
+            amplicon_num += 1
+
+            fwd_missing = pair.forward.as_kmer() not in self.kmers
+            rev_missing = pair.reverse.as_kmer() not in self.kmers
+
+            if fwd_missing and not rev_missing:
+                try:
+                    new_pair = self._find_replacement_fwd(pair, this_existing_pool)
+                    print(f"Replaced fwd primer for amplicon {amplicon_num}")
+                except NoSuitablePrimers:
+                    print(
+                        f"Unable to find replacement fwd primer for amplicon {amplicon_num}"
+                    )
+            if rev_missing and not fwd_missing:
+                try:
+                    new_pair = self._find_replacement_rev(
+                        pair, next_pair, this_existing_pool
+                    )
+                    print(f"Replaced rev primer for amplicon {amplicon_num}")
+                except NoSuitablePrimers:
+                    print(
+                        f"Unable to find replacement rev primer for amplicon {amplicon_num}"
+                    )
+
+            # Full freedom when replacing both
+            if not new_pair and (fwd_missing or rev_missing):
+                try:
+                    new_pair = self._find_pair(
+                        next_pair=next_pair, same_pool_pairs=this_existing_pool
+                    )
+                    print(f"Replaced both primers for amplicon {amplicon_num}")
+                except NoSuitablePrimers:
+                    print(f"Unable to replace pair {amplicon_num}")
+
+            self._this_pool.append(new_pair if new_pair else pair)
+            this_existing_pool = existing_pools[self._pool_index]
+            other_existing_pool = existing_pools[(self._pool_index + 1) % 2]

@@ -19,14 +19,16 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>
 """
 
 import csv
+from operator import attrgetter
 from pathlib import Path
-from typing import Sequence, Protocol
+from typing import Optional, Sequence, Protocol
 
 from jinja2 import Environment, PackageLoader, select_autoescape
 
 from primaldeep.config import Config
 from primaldeep.datauri import get_data_uri
 from primaldeep.dna import reverse_complement, SeqRecordProtocol
+from primaldeep.exceptions import NoReverseWindow, NoSuitablePrimers
 from primaldeep.primer import Kmer, Primer, PrimerDirection, PrimerPair
 
 
@@ -46,57 +48,85 @@ class Scheme:
 
         self.pools: Sequence[Sequence[PrimerPair]] = []
 
-    def reverse_primer_window_start(self, fwd: Primer) -> int:
+    def reverse_primer_window_start(
+        self, fwd: Primer, next_pair: Optional[PrimerPair] = None
+    ) -> int:
         """
         Given a forward Primer, find the start of the window for reverse candidates.
         Min amplicon size and max primer size determine this bound, relative to the
         forward primer.
         """
-        return fwd.start + self.cfg.amplicon_size_min - self.cfg.primer_size_max
+        if next_pair is None:
+            return fwd.start + self.cfg.amplicon_size_min - self.cfg.primer_size_max
+        else:
+            return next_pair.forward.end
 
     def reverse_primer_window_end(self, fwd: Primer) -> int:
         """
         Given a forward Primer, find the end of the window for reverse candidates.
         Max amplicon size sets the right bound, relative to the forward primer.
         """
-        return fwd.start + self.cfg.amplicon_size_max - 1
+        return fwd.start + self.cfg.amplicon_size_max
 
-    def reverse_primer_window(self, fwd: Primer) -> tuple[int, int]:
+    def reverse_primer_window(
+        self, fwd: Primer, next_pair: Optional[PrimerPair] = None
+    ) -> tuple[int, int]:
         """
         Given a foward Primer, return reference coords describing a window for
         possible reverse candidates.
         """
-        return (
-            self.reverse_primer_window_start(fwd),
-            self.reverse_primer_window_end(fwd),
-        )
+        start = self.reverse_primer_window_start(fwd, next_pair=next_pair)
+        end = self.reverse_primer_window_end(fwd)
 
-    def reverse_candidate_kmers(self, fwd: Primer) -> list[Kmer]:
+        if (end - start) < self.cfg.primer_size_min:
+            raise NoReverseWindow
+        return (start, end)
+
+    def reverse_candidate_kmers(
+        self, fwd: Primer, next_pair: Optional[PrimerPair] = None
+    ) -> list[Kmer]:
         """
         Given a forward Primer, return a list of Kmers as candidates for a
         reverse primer, satisfying amplicon size constraints.
         """
-        window = self.reverse_primer_window(fwd)
+        window = self.reverse_primer_window(fwd, next_pair=next_pair)
         return [k for k in self.kmers if k.start >= window[0] and k.end <= window[1]]
 
-    def reverse_candidate_pairs(self, fwd: Primer) -> list[PrimerPair]:
+    def reverse_candidate_pairs(
+        self, fwd: Primer, next_pair: Optional[PrimerPair] = None
+    ) -> list[PrimerPair]:
         """
         Given a forward Primer, return a list of candidate PrimerPairs that
-        satisfy amplicon size constraints, sorted highest-length first.
+        satisfy amplicon size constraints, sorted by amplicon size deviation from mean.
+
+        If next_pair is provided, constrain to those pairs that would maintain an overlap.
         """
-        pairs = [
-            PrimerPair(
-                fwd,
-                Primer(reverse_complement(kmer.seq), kmer.end, PrimerDirection.REVERSE),
-            )
-            for kmer in self.reverse_candidate_kmers(fwd)
+        try:
+            reverse_primers = [
+                Primer(
+                    reverse_complement(kmer.seq), kmer.start, PrimerDirection.REVERSE
+                )
+                for kmer in self.reverse_candidate_kmers(fwd, next_pair=next_pair)
+            ]
+        except NoReverseWindow:
+            raise NoSuitablePrimers
+
+        # Remove reverse primers that fail harpin check
+        reverse_primers = [
+            p for p in reverse_primers if p.passes_hairpin_check(self.cfg)
         ]
+
+        # Generate all pair combinations
+        pairs = [PrimerPair(fwd, rev) for rev in reverse_primers]
 
         # Remove pairs that generate an amplicon size less than min
         pairs = [pair for pair in pairs if len(pair) >= self.cfg.amplicon_size_min]
 
-        # Reverse length sort
-        pairs.sort(key=len, reverse=True)
+        if not len(pairs):
+            raise NoSuitablePrimers
+
+        # Sort by deviation from target
+        pairs.sort(key=lambda p: abs(self.cfg.amplicon_size_target - p.amplicon_size))
         return pairs
 
     def primer_pairs(self) -> list[PrimerPair]:
@@ -105,7 +135,7 @@ class Scheme:
         """
         return sorted(
             [pair for pool in self.pools for pair in pool],
-            key=lambda p: p.forward.start,
+            key=attrgetter("start"),
         )
 
     def primer_bed_rows(
@@ -121,14 +151,16 @@ class Scheme:
         for n, pair in enumerate(self.primer_pairs()):
             pool_num = n % len(self.pools) + 1
             for direction in PrimerDirection:
-                name = primer_name_template.format(n, direction.name)
+                name = primer_name_template.format(
+                    n + 1, "LEFT" if direction == PrimerDirection.FORWARD else "RIGHT"
+                )
                 p: Primer = getattr(pair, direction.name.lower())
-                start = p.start if p.direction == PrimerDirection.FORWARD else p.end
-                end = p.end if p.direction == PrimerDirection.FORWARD else p.start
+                start = p.start
+                end = p.end
                 row = (
                     ref_id,
                     start,
-                    end + 1,  # BED is half-open
+                    end,
                     name,
                     pool_num,
                     direction.value,
@@ -163,7 +195,7 @@ class Scheme:
                 "primalscheme",
                 "mRNA",
                 pair.start + 1,
-                pair.end + 1,
+                pair.end,  # GFF is closed
                 ".",
                 ".",
                 ".",
@@ -175,14 +207,14 @@ class Scheme:
             for direction in PrimerDirection:
                 name = primer_name_template.format(n, direction.name)
                 p = getattr(pair, direction.name.lower())
-                start = p.start if p.direction == PrimerDirection.FORWARD else p.end
-                end = p.end if p.direction == PrimerDirection.FORWARD else p.start
+                start = p.start
+                end = p.end
                 row = [
                     ref_id,
                     "primalscheme",
                     "exon",
                     start + 1,
-                    end + 1,
+                    end,
                     ".",
                     ".",
                     ".",

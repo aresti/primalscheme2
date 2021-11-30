@@ -18,10 +18,10 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>
 """
 
-import math
+import statistics
 import pathlib
 
-from typing import Any
+from typing import Any, Optional
 
 
 class Config:
@@ -34,10 +34,12 @@ class Config:
     output = pathlib.Path("./output")
     prefix = "scheme"
     force = False
+    repair: Optional[pathlib.Path] = None
 
-    amplicon_size_min = 300
-    amplicon_size_max = 400
-    min_overlap = 0
+    amplicon_size_min = 380
+    amplicon_size_max = 420
+    amplicon_size_target: int
+    min_overlap = 10
     high_gc = False
 
     primer_size_default_min = 19
@@ -68,8 +70,9 @@ class Config:
             if hasattr(self, key):
                 setattr(self, key, value)
 
-        self.amplicon_size_diff = self.amplicon_size_max - self.amplicon_size_min
-        self.region_flank_size = math.floor(self.amplicon_size_diff / 2)
+        self.amplicon_size_target = int(
+            statistics.mean([self.amplicon_size_min, self.amplicon_size_max])
+        )
 
         if self.high_gc:
             self.primer_size_min = self.primer_size_hgc_min

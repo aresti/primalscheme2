@@ -18,6 +18,7 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>
 """
 import click
+import csv
 import os
 import pathlib
 import sys
@@ -32,8 +33,9 @@ from Bio import SeqIO  # type: ignore
 from primaldeep.config import Config
 from primaldeep.primer import (
     Kmer,
+    Primer,
+    PrimerPair,
     digest_seq,
-    kmer_thermo_check,
     filter_unambiguous_kmers,
 )
 from primaldeep.overlap import OverlapPriorityScheme
@@ -74,6 +76,11 @@ def check_or_create_outpath(path: pathlib.Path, force: bool = False) -> pathlib.
     type=click.IntRange(100, 2000),
     default=Config.amplicon_size_max,
 )
+@click.option(
+    "--min-overlap",
+    type=click.IntRange(0),
+    default=Config.min_overlap,
+)
 @click.option("--force/--no-force", default=Config.force)
 @click.option("--strategy", type=click.Choice(("o", "p")), default="o")
 @click.option(
@@ -83,6 +90,16 @@ def check_or_create_outpath(path: pathlib.Path, force: bool = False) -> pathlib.
     metavar="<str>",
     default=Config.prefix,
     show_default=True,
+)
+@click.option(
+    "--repair",
+    type=click.Path(
+        exists=True,
+        file_okay=True,
+        dir_okay=False,
+        writable=True,
+        path_type=pathlib.Path,
+    ),
 )
 def main(
     input: list[TextIO],
@@ -113,7 +130,7 @@ def main(
                 Kmer(k.seq, k.start) for k in digest_seq(str(primary_ref.seq), size)
             ]
             unambiguous = filter_unambiguous_kmers(digested)
-            passing_kmers.extend(k for k in unambiguous if kmer_thermo_check(k, cfg))
+            passing_kmers.extend(k for k in unambiguous if k.passes_thermo_checks(cfg))
 
     passing_kmers.sort(key=attrgetter("start"))
     click.echo(f"Found {len(passing_kmers)} non-ambiguous kmers passing thermo filter")
@@ -128,6 +145,26 @@ def main(
                 cfg=cfg,
                 pbar=pbar,
             )
+
+        if cfg.repair is None:
+            scheme.execute()
+
+        else:
+            existing_pools: tuple[list[PrimerPair], list[PrimerPair]] = ([], [])
+
+            with open(cfg.repair, newline="") as bedfile:
+                bedreader = csv.reader(bedfile, delimiter="\t")
+                for n, row in enumerate(bedreader):
+                    pool = 0 if n % 4 < 2 else 1
+                    if n % 2 == 0:
+                        fwd = Primer.from_bed_row(row)
+                    else:
+                        rev = Primer.from_bed_row(row)
+                        existing_pools[pool].append(
+                            PrimerPair(forward=fwd, reverse=rev)
+                        )
+
+            scheme.repair(existing_pools)
 
         scheme.write_primer_bed()
         scheme.write_primer_gff()

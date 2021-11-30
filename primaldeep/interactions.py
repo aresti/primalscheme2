@@ -30,9 +30,11 @@ def cig_check(
 
         identity = matches / (matches + mismatches)
         ol_tm = tm(overlap, cfg)
+        # if ol_tm > cfg.dimer_max_tm and identity > cfg.dimer_min_identity:
+        #     print("Interaction found!")
         return ol_tm > cfg.dimer_max_tm and identity > cfg.dimer_min_identity
 
-    return False
+    return False  # no interaction
 
 
 def parasail_align(seq1: str, seq2: str) -> parasail.Traceback:

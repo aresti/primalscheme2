@@ -50,13 +50,17 @@ class Kmer:
         """Return Tm for the kmer sequence."""
         return dna.tm(self.seq, cfg)
 
-    def calc_hairpin_tm(self, cfg: dna.ThermoConfig) -> float:
-        """Return the primer3 hairpin thermo object for the kmer sequence."""
-        return dna.hairpin(self.seq, cfg).tm
-
     def interacts_with(self, kmers: Sequence["Kmer"], cfg: dna.ThermoConfig) -> bool:
         """Return true if the kmer interacts with any of a sequence of kmers."""
         return any(check_kmer_interaction(self, kmer, cfg) for kmer in kmers)
+
+    def passes_thermo_checks(self, cfg: Config) -> bool:
+        """Are all kmer thermo values below threshold?"""
+        return (
+            (cfg.primer_gc_min <= self.gc <= cfg.primer_gc_max)
+            and (cfg.primer_tm_min <= self.calc_tm(cfg) <= cfg.primer_tm_max)
+            and (self.max_homo <= cfg.primer_homopolymer_max)
+        )
 
     @property
     def rev_seq(self) -> str:
@@ -70,10 +74,18 @@ class Kmer:
     def __str__(self) -> str:
         return f"Kmer: {self.seq}, start: {self.start}"
 
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Kmer):
+            return NotImplemented
+        return (self.start, self.seq) == (other.start, other.seq)
+
+    def __hash__(self) -> int:
+        return hash((self.start, self.seq))
+
     @property
     def end(self) -> int:
-        """End position (closed)."""
-        return self.start + len(self) - 1
+        """End position (open)."""
+        return self.start + len(self)
 
 
 class PrimerDirection(Enum):
@@ -92,16 +104,48 @@ class Primer(Kmer):
         super().__init__(seq, start)
         self.direction = direction
 
+    @classmethod
+    def from_bed_row(cls, row: list[str]) -> "Primer":
+        seq = row[6]
+        direction = (
+            PrimerDirection.FORWARD if row[5] == "+" else PrimerDirection.REVERSE
+        )
+        start = int(row[1])
+        return cls(seq, start, direction)
+
     def __str__(self) -> str:
         return f"{self.direction}, {self.seq}, {self.start}"
 
     @property
     def end(self) -> int:
-        """Primer (inclusive) end position."""
-        if self.direction == PrimerDirection.FORWARD:
-            return self.start + len(self) - 1
-        else:
-            return self.start - len(self) + 1
+        """Primer end position."""
+        return self.start + len(self)
+
+    def calc_hairpin_tm(self, cfg: dna.ThermoConfig) -> float:
+        """Return the primer3 hairpin thermo object for the primer sequence."""
+        return dna.hairpin(self.seq, cfg).tm
+
+    def passes_hairpin_check(self, cfg: Config) -> bool:
+        """Is primer hairpin tm below max?"""
+        return self.calc_hairpin_tm(cfg) <= cfg.primer_hairpin_th_max
+
+    def as_kmer(self) -> Kmer:
+        return Kmer(
+            start=self.start,
+            seq=self.seq if self.direction == PrimerDirection.FORWARD else self.rev_seq,
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Primer):
+            return NotImplemented
+        return (self.start, self.seq, self.direction) == (
+            other.start,
+            other.seq,
+            other.direction,
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.start, self.seq, self.direction))
 
 
 class PrimerPair:
@@ -110,6 +154,9 @@ class PrimerPair:
     __slots__ = "forward", "reverse"
 
     def __init__(self, forward: Primer, reverse: Primer):
+        if reverse.start <= forward.end:
+            raise ValueError("Reverse primer should be located after forward primer.")
+
         self.forward = forward
         self.reverse = reverse
 
@@ -119,11 +166,11 @@ class PrimerPair:
 
     @property
     def end(self) -> int:
-        return self.reverse.start
+        return self.reverse.end
 
     @property
     def amplicon_size(self) -> int:
-        return self.reverse.start - self.forward.start + 1
+        return self.reverse.end - self.forward.start
 
     def __len__(self) -> int:
         return self.amplicon_size
@@ -146,17 +193,7 @@ def filter_unambiguous_kmers(kmers: Iterable[Kmer]) -> Iterable[Kmer]:
     ]
 
 
-def kmer_thermo_check(kmer: Kmer, cfg: Config) -> bool:
-    """Hard filter for candidate primers."""
-    return (
-        (cfg.primer_gc_min <= kmer.gc <= cfg.primer_gc_max)
-        and (cfg.primer_tm_min <= kmer.calc_tm(cfg) <= cfg.primer_tm_max)
-        and (kmer.calc_hairpin_tm(cfg) <= cfg.primer_hairpin_th_max)
-        and (kmer.max_homo <= cfg.primer_homopolymer_max)
-    )
-
-
 def check_kmer_interaction(a: "Kmer", b: "Kmer", cfg: dna.ThermoConfig) -> bool:
-    return interaction_check(a.seq, b.seq, cfg) and interaction_check(
-        a.rev_seq, b.rev_seq, cfg
+    return interaction_check(a.seq, b.seq, cfg) or interaction_check(
+        b.rev_seq, a.rev_seq, cfg
     )
