@@ -125,6 +125,8 @@ def main(
         # Make output path absolute
         cfg.output = Path(os.getcwd()) / cfg.output
 
+    check_or_create_outpath(cfg.output, force=cfg.force)
+
     primary_ref = fastas[0]
     kmers_passing_thermo: list[Kmer] = []
     fwd_kmers: list[Kmer] = []
