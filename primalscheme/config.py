@@ -36,7 +36,7 @@ class Config:
     force = False
     repair: Optional[pathlib.Path] = None
 
-    amplicon_size_min = 378
+    amplicon_size_min = 380
     amplicon_size_max = 420
     amplicon_size_target: int
     min_overlap = 10
