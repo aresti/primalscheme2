@@ -265,7 +265,7 @@ class OverlapPriorityScheme(Scheme):
             if fwd_missing and not rev_missing:
                 try:
                     new_pair = self._find_replacement_fwd(pair, this_existing_pool)
-                    logger.info("Replaced fwd primer for amplicon {n}", amplicon_num)
+                    logger.info("Replaced fwd primer for amplicon {}", amplicon_num)
                 except NoSuitablePrimers:
                     pass
             if rev_missing and not fwd_missing:
@@ -273,7 +273,7 @@ class OverlapPriorityScheme(Scheme):
                     new_pair = self._find_replacement_rev(
                         pair, next_pair, this_existing_pool
                     )
-                    logger.info("Replaced rev primer for amplicon {n}", amplicon_num)
+                    logger.info("Replaced rev primer for amplicon {}", amplicon_num)
                 except NoSuitablePrimers:
                     pass
 
@@ -283,10 +283,10 @@ class OverlapPriorityScheme(Scheme):
                     new_pair = self._find_pair(
                         next_pair=next_pair, same_pool_pairs=this_existing_pool
                     )
-                    logger.info("Replaced both primers for amplicon {n}", amplicon_num)
+                    logger.info("Replaced both primers for amplicon {}", amplicon_num)
                 except NoSuitablePrimers:
                     logger.warning(
-                        "Unable to replace primers for amplicon {n}", amplicon_num
+                        "Unable to replace primers for amplicon {}", amplicon_num
                     )
 
             self._this_pool.append(new_pair if new_pair else pair)
