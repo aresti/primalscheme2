@@ -101,7 +101,12 @@ class OverlapPriorityScheme(Scheme):
         else:
             # Not first in either pool
             start_from = self._prev_pair_same_pool.reverse.end
-        return [k for k in self.fwd_kmers if k.start >= start_from]
+        ref_end = len(self.ref.seq)
+        return [
+            k
+            for k in self.fwd_kmers
+            if k.start >= start_from and k.start + self.cfg.amplicon_size_min <= ref_end
+        ]
 
     def _fwd_kmers_maintaining_overlap(
         self,
@@ -166,15 +171,17 @@ class OverlapPriorityScheme(Scheme):
             existing_pairs=same_pool_pairs
         )
 
-        for fwd in self._fwd_candidates():
+        candidates = self._fwd_candidates()
+
+        for fwd in candidates:
+            try:
+                candidate_pairs = self.reverse_candidate_pairs(
+                    Primer.from_kmer(fwd, PrimerDirection.FORWARD),
+                    next_pair=next_pair,
+                )
+            except NoSuitablePrimers:
+                continue
             if interaction_checker(fwd):
-                try:
-                    candidate_pairs = self.reverse_candidate_pairs(
-                        Primer.from_kmer(fwd, PrimerDirection.FORWARD),
-                        next_pair=next_pair,
-                    )
-                except NoSuitablePrimers:
-                    continue
                 for pair in candidate_pairs:
                     if interaction_checker(pair.reverse):
                         return pair
