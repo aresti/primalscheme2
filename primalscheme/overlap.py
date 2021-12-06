@@ -196,7 +196,7 @@ class OverlapPriorityScheme(Scheme):
     def _replacement_fwd_pairs(self, pair: PrimerPair) -> list[PrimerPair]:
         rev = pair.reverse
         pairs = [
-            PrimerPair(Primer(kmer.seq, kmer.start, PrimerDirection.FORWARD), rev)
+            PrimerPair(Primer.from_kmer(kmer, PrimerDirection.FORWARD), rev)
             for kmer in self._replacement_fwd_kmers(pair)
         ]
 
