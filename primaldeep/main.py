@@ -24,13 +24,15 @@ import pathlib
 import sys
 import webbrowser
 
-from typing import Any, TextIO
+from loguru import logger
 from operator import attrgetter
 from pathlib import Path
+from typing import Any, TextIO
 
 from Bio import SeqIO  # type: ignore
 
 from primaldeep.config import Config
+from primaldeep.overlap import OverlapPriorityScheme
 from primaldeep.primer import (
     Kmer,
     Primer,
@@ -38,7 +40,9 @@ from primaldeep.primer import (
     digest_seq,
     filter_unambiguous_kmers,
 )
-from primaldeep.overlap import OverlapPriorityScheme
+
+
+logger = logger.opt(colors=True)
 
 
 def check_or_create_outpath(path: pathlib.Path, force: bool = False) -> pathlib.Path:
@@ -106,6 +110,9 @@ def main(
     **kwargs: Any,
 ) -> None:
 
+    logger.remove()  # Remove default stderr logger
+    logger.add(sys.stderr, colorize=True, format="{message}")
+
     if not len(input):
         # noop  - see note in click docs
         # https://click.palletsprojects.com/en/7.x/arguments/?highlight=nargs#variadic-arguments
@@ -119,32 +126,63 @@ def main(
         cfg.output = Path(os.getcwd()) / cfg.output
 
     primary_ref = fastas[0]
-    passing_kmers: list[Kmer] = []
+    kmers_passing_thermo: list[Kmer] = []
+    fwd_kmers: list[Kmer] = []
+    rev_kmers: list[Kmer] = []
 
     # Digestion
     kmer_sizes = range(cfg.primer_size_min, cfg.primer_size_max + 1)
+    logger.info(
+        "Digesting reference <blue>{ref}</> into kmers [{min}-{max}]-mers",
+        ref=primary_ref.id,
+        min=cfg.primer_size_min,
+        max=cfg.primer_size_max,
+    )
 
-    with click.progressbar(kmer_sizes, label="Digesting reference") as sizes:
-        for size in sizes:
+    with click.progressbar(
+        kmer_sizes, file=sys.stderr, label=f"{cfg.primer_size_min}-mers"
+    ) as kmer_sizes_bar:
+        for size in kmer_sizes_bar:
+            kmer_sizes_bar.label = f"{size}-mers"
             digested = [
                 Kmer(k.seq, k.start) for k in digest_seq(str(primary_ref.seq), size)
             ]
             unambiguous = filter_unambiguous_kmers(digested)
-            passing_kmers.extend(k for k in unambiguous if k.passes_thermo_checks(cfg))
+            kmers_passing_thermo.extend(
+                k for k in unambiguous if k.passes_thermo_checks(cfg)
+            )
 
-    passing_kmers.sort(key=attrgetter("start"))
-    click.echo(f"Found {len(passing_kmers)} non-ambiguous kmers passing thermo filter")
+    kmers_passing_thermo.sort(key=attrgetter("start"))
+
+    logger.info(
+        "Found <blue>{n}</> non-ambiguous kmers passing thermo filter",
+        n=len(kmers_passing_thermo),
+    )
+
+    # Hairpin check
+    with click.progressbar(
+        kmers_passing_thermo, file=sys.stderr, label="Screening hairpin interactions"
+    ) as hairpin_bar:
+        for fwd_kmer in hairpin_bar:
+            if fwd_kmer.passes_hairpin_check(cfg):
+                fwd_kmers.append(fwd_kmer)
+            rev_kmer = fwd_kmer.as_reverse()
+            if rev_kmer.passes_hairpin_check(cfg):
+                rev_kmers.append(rev_kmer)
+
+    logger.info(
+        "Found <blue>{n_fwd}</> fwd, <blue>{n_rev}</> rev kmers passing hairpin check",
+        n_fwd=len(fwd_kmers),
+        n_rev=len(rev_kmers),
+    )
 
     if kwargs["strategy"] == "o":
-        with click.progressbar(
-            label="Designing scheme", length=len(primary_ref.seq)
-        ) as pbar:
-            scheme = OverlapPriorityScheme(
-                primary_ref,
-                kmers=passing_kmers,
-                cfg=cfg,
-                pbar=pbar,
-            )
+        scheme = OverlapPriorityScheme(
+            primary_ref,
+            fwd_kmers=fwd_kmers,
+            rev_kmers=rev_kmers,
+            cfg=cfg,
+        )
 
         if cfg.repair is None:
             scheme.execute()
@@ -171,7 +209,7 @@ def main(
         scheme.write_report()
 
         report_uri = scheme.report_filepath.as_uri()
-        click.echo(report_uri)
+        logger.info(report_uri)
         webbrowser.open(report_uri)
 
 

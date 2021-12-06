@@ -18,6 +18,8 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>
 """
 
+import copy
+
 from enum import Enum
 from typing import Iterable, Sequence
 
@@ -62,8 +64,22 @@ class Kmer:
             and (self.max_homo <= cfg.primer_homopolymer_max)
         )
 
+    def calc_hairpin_tm(self, cfg: dna.ThermoConfig) -> float:
+        """Return the primer3 hairpin thermo object for the kmer sequence."""
+        return dna.hairpin(self.seq, cfg).tm
+
+    def passes_hairpin_check(self, cfg: Config) -> bool:
+        """Is primer hairpin tm below max?"""
+        return self.calc_hairpin_tm(cfg) <= cfg.primer_hairpin_th_max
+
+    def as_reverse(self) -> "Kmer":
+        """Return a kmer at the same position with reverse complement seq"""
+        kmer = copy.deepcopy(self)
+        kmer.seq = self.reverse_complement
+        return kmer
+
     @property
-    def rev_seq(self) -> str:
+    def reverse_complement(self) -> str:
         """Return the reverse complement fo the seqence."""
         return dna.reverse_complement(self.seq)
 
@@ -98,11 +114,15 @@ class PrimerDirection(Enum):
 class Primer(Kmer):
     """A primer"""
 
-    __slots__ = "direction"
+    __slots__ = "direction", "candidate_num"
 
     def __init__(self, seq: str, start: int, direction: PrimerDirection):
         super().__init__(seq, start)
         self.direction = direction
+
+    @classmethod
+    def from_kmer(cls, kmer: Kmer, direction: PrimerDirection) -> "Primer":
+        return cls(kmer.seq, kmer.start, direction)
 
     @classmethod
     def from_bed_row(cls, row: list[str]) -> "Primer":
@@ -121,19 +141,8 @@ class Primer(Kmer):
         """Primer end position."""
         return self.start + len(self)
 
-    def calc_hairpin_tm(self, cfg: dna.ThermoConfig) -> float:
-        """Return the primer3 hairpin thermo object for the primer sequence."""
-        return dna.hairpin(self.seq, cfg).tm
-
-    def passes_hairpin_check(self, cfg: Config) -> bool:
-        """Is primer hairpin tm below max?"""
-        return self.calc_hairpin_tm(cfg) <= cfg.primer_hairpin_th_max
-
     def as_kmer(self) -> Kmer:
-        return Kmer(
-            start=self.start,
-            seq=self.seq if self.direction == PrimerDirection.FORWARD else self.rev_seq,
-        )
+        return Kmer(start=self.start, seq=self.seq)
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Primer):
@@ -195,5 +204,5 @@ def filter_unambiguous_kmers(kmers: Iterable[Kmer]) -> Iterable[Kmer]:
 
 def check_kmer_interaction(a: "Kmer", b: "Kmer", cfg: dna.ThermoConfig) -> bool:
     return interaction_check(a.seq, b.seq, cfg) or interaction_check(
-        b.rev_seq, a.rev_seq, cfg
+        b.reverse_complement, a.reverse_complement, cfg
     )

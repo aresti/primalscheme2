@@ -1,17 +1,17 @@
 [tool.poetry]
 name = "primaldeep"
-version = "0.1.0"
+version = "2.0.0rc1"
 description = ""
-authors = ["Josh Quick <j.quick@bham.ac.uk>", "Andrew Smith <andysmith.d@gmail.com>"]
+authors = ["Andrew Smith <andysmith.d@gmail.com>", "Josh Quick <j.quick@bham.ac.uk>"]
 
 [tool.poetry.dependencies]
 python = "^3.9"
 click = "^8.0.1"
 primer3-py = "^0.6.1"
-tqdm = "^4.62.3"
 parasail = "^1.2.4"
 biopython = "^1.79"
 Jinja2 = "^3.0.3"
+loguru = "^0.5.3"
 
 [tool.poetry.dev-dependencies]
 pytest = "^5.2"
@@ -24,4 +24,4 @@ requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.scripts]
-primaldeep = 'primaldeep.main:main'
+primalscheme = 'primaldeep.main:main'

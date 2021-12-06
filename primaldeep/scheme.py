@@ -21,30 +21,29 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>
 import csv
 from operator import attrgetter
 from pathlib import Path
-from typing import Optional, Sequence, Protocol
+from typing import Optional, Sequence
 
 from jinja2 import Environment, PackageLoader, select_autoescape
 
 from primaldeep.config import Config
 from primaldeep.datauri import get_data_uri
-from primaldeep.dna import reverse_complement, SeqRecordProtocol
+from primaldeep.dna import SeqRecordProtocol
 from primaldeep.exceptions import NoReverseWindow, NoSuitablePrimers
 from primaldeep.primer import Kmer, Primer, PrimerDirection, PrimerPair
 
 
-class ProgressBar(Protocol):
-    def update(self, n_steps: int, current_item: None = None) -> None:
-        ...
-
-
 class Scheme:
     def __init__(
-        self, ref: SeqRecordProtocol, kmers: list[Kmer], cfg: Config, pbar: ProgressBar
+        self,
+        ref: SeqRecordProtocol,
+        fwd_kmers: list[Kmer],
+        rev_kmers: list[Kmer],
+        cfg: Config,
     ):
         self.ref = ref
-        self.kmers = kmers
+        self.fwd_kmers = fwd_kmers
+        self.rev_kmers = rev_kmers
         self.cfg = cfg
-        self.pbar = pbar
 
         self.pools: Sequence[Sequence[PrimerPair]] = []
 
@@ -90,7 +89,9 @@ class Scheme:
         reverse primer, satisfying amplicon size constraints.
         """
         window = self.reverse_primer_window(fwd, next_pair=next_pair)
-        return [k for k in self.kmers if k.start >= window[0] and k.end <= window[1]]
+        return [
+            k for k in self.rev_kmers if k.start >= window[0] and k.end <= window[1]
+        ]
 
     def reverse_candidate_pairs(
         self, fwd: Primer, next_pair: Optional[PrimerPair] = None
@@ -99,22 +100,15 @@ class Scheme:
         Given a forward Primer, return a list of candidate PrimerPairs that
         satisfy amplicon size constraints, sorted by amplicon size deviation from mean.
 
-        If next_pair is provided, constrain to those pairs that would maintain an overlap.
+        If next_pair is provided, constrain to those pairs that would maintain overlap.
         """
         try:
             reverse_primers = [
-                Primer(
-                    reverse_complement(kmer.seq), kmer.start, PrimerDirection.REVERSE
-                )
+                Primer.from_kmer(kmer, PrimerDirection.REVERSE)
                 for kmer in self.reverse_candidate_kmers(fwd, next_pair=next_pair)
             ]
         except NoReverseWindow:
             raise NoSuitablePrimers
-
-        # Remove reverse primers that fail harpin check
-        reverse_primers = [
-            p for p in reverse_primers if p.passes_hairpin_check(self.cfg)
-        ]
 
         # Generate all pair combinations
         pairs = [PrimerPair(fwd, rev) for rev in reverse_primers]
@@ -137,6 +131,9 @@ class Scheme:
             [pair for pool in self.pools for pair in pool],
             key=attrgetter("start"),
         )
+
+    def _current_amplicon_num(self) -> int:
+        return len(self.primer_pairs()) + 1
 
     def primer_bed_rows(
         self,
@@ -170,7 +167,9 @@ class Scheme:
 
         return rows
 
-    def write_primer_bed(self) -> None:
+    def write_primer_bed(
+        self,
+    ) -> None:
         """
         Write a BED file describing all primers in the scheme.
         """

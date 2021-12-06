@@ -26,7 +26,7 @@ from typing import Any, Optional
 
 class Config:
     """
-    PrimalDeep configuration.
+    PrimalScheme configuration.
     Class properties are defaults, can be overriden
     on instantiation (and will shadow class defaults)
     """
@@ -36,23 +36,22 @@ class Config:
     force = False
     repair: Optional[pathlib.Path] = None
 
-    amplicon_size_min = 380
+    amplicon_size_min = 378
     amplicon_size_max = 420
     amplicon_size_target: int
     min_overlap = 10
     high_gc = False
 
-    primer_size_default_min = 19
-    primer_size_default_max = 34
-    primer_size_default_opt = 22
-    primer_size_hgc_min = 17
-    primer_size_hgc_max = 30
-    primer_size_hgc_opt = 20
+    _primer_size_default_min = 19
+    _primer_size_default_max = 34
+    _primer_size_hgc_min = 17
+    _primer_size_hgc_max = 30
 
-    primer_gc_default_min = 30
-    primer_gc_default_max = 55
-    primer_gc_hgc_min = 40
-    primer_gc_hgc_max = 65
+    _primer_gc_default_min = 30
+    _primer_gc_default_max = 55
+    _primer_gc_hgc_min = 40
+    _primer_gc_hgc_max = 65
+
     primer_tm_min = 59.5
     primer_tm_max = 62.5
     primer_hairpin_th_max = 47.0
@@ -75,17 +74,29 @@ class Config:
         )
 
         if self.high_gc:
-            self.primer_size_min = self.primer_size_hgc_min
-            self.primer_size_max = self.primer_size_hgc_max
-            self.primer_size_opt = self.primer_size_hgc_opt
-            self.primer_gc_min = self.primer_gc_hgc_min
-            self.primer_gc_max = self.primer_gc_hgc_max
+            self.primer_size_min = self._primer_size_hgc_min
+            self.primer_size_max = self._primer_size_hgc_max
+            self.primer_gc_min = self._primer_gc_hgc_min
+            self.primer_gc_max = self._primer_gc_hgc_max
         else:
-            self.primer_size_min = self.primer_size_default_min
-            self.primer_size_max = self.primer_size_default_max
-            self.primer_size_opt = self.primer_size_default_opt
-            self.primer_gc_min = self.primer_gc_default_min
-            self.primer_gc_max = self.primer_gc_default_max
+            self.primer_size_min = self._primer_size_default_min
+            self.primer_size_max = self._primer_size_default_max
+            self.primer_gc_min = self._primer_gc_default_min
+            self.primer_gc_max = self._primer_gc_default_max
+
+    def items(self) -> list[tuple[str, Any]]:
+        """
+        Return a list of (key, val) tuples for non-private, non-callable members
+        """
+        items = []
+        for key, val in self.__dict__.items():
+            if not (callable(getattr(self, key)) or key.startswith("_")):
+                items.append((key, val))
+        items.sort(key=lambda x: x[0])
+        return items
 
     def __str__(self) -> str:
-        return str(self.__dict__)
+        return "\n".join(f"{key}: {val}" for key, val in self.items())
+
+
+CLEAR_LINE = "\r\033[K"

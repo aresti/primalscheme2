@@ -17,7 +17,7 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>
 """
-
+from loguru import logger
 from operator import attrgetter
 from typing import Callable, Optional, Sequence
 
@@ -25,15 +25,17 @@ from Bio import SeqRecord  # type: ignore
 
 from primaldeep.exceptions import NoSuitablePrimers
 from primaldeep.primer import Kmer, Primer, PrimerDirection, PrimerPair
-from primaldeep.scheme import Scheme, ProgressBar
+from primaldeep.scheme import Scheme
 from primaldeep.config import Config
+
+logger = logger.opt(colors=True)
 
 
 class OverlapPriorityScheme(Scheme):
     def __init__(
-        self, ref: SeqRecord, kmers: list[Kmer], cfg: Config, pbar: ProgressBar
+        self, ref: SeqRecord, fwd_kmers: list[Kmer], rev_kmers: list[Kmer], cfg: Config
     ):
-        super().__init__(ref, kmers, cfg, pbar)
+        super().__init__(ref, fwd_kmers, rev_kmers, cfg)
 
         self.pools: tuple[list[PrimerPair], list[PrimerPair]] = ([], [])
         self._pool_num = 0
@@ -75,65 +77,50 @@ class OverlapPriorityScheme(Scheme):
         """
         return self._this_pool[-1] if len(self._this_pool) else None
 
-    @property
-    def progress(self) -> int:
-        """
-        Return the end position of prev_pair, representing progress.
-        """
-        return self._prev_pair.end if self._prev_pair else 0
+    def _available_fwd_kmers(self) -> Sequence[Kmer]:
+        """Return all available forward kmers."""
+        if self._prev_pair is None:
+            # Empty scheme
+            return self.fwd_kmers
 
-    def _kmers_right_of_pair(self, pair: PrimerPair) -> Sequence[Kmer]:
-        """Return all kmers to the right of a primer pair."""
-        return [k for k in self.kmers if k.start >= pair.reverse.end]
+        if self._prev_pair_same_pool is None:
+            # Empty pool
+            start_from = self._prev_pair.forward.start + 1
+        else:
+            # Not first in either pool
+            start_from = self._prev_pair_same_pool.reverse.end
+        return [k for k in self.fwd_kmers if k.start >= start_from]
 
-    def _kmers_maintaining_overlap(
-        self, kmers: Sequence[Kmer], pair: PrimerPair
-    ) -> Sequence[Kmer]:
+    def _fwd_kmers_maintaining_overlap(
+        self,
+    ) -> list[Kmer]:
         """
-        Return all kmers that would maintain min_overlap, if used as forward primer.
+        Return all kmers that would maintain min_overlap, if used as forward primer,
+        sorted by highest end position (furthest right).
         """
+        if self._prev_pair is None:
+            return []
+
+        pair = self._prev_pair
 
         def maintains_overlap(kmer: Kmer) -> bool:
             return (
-                kmer.end + self.cfg.min_overlap < pair.reverse.start
+                kmer.end - 1 + self.cfg.min_overlap < pair.reverse.start
                 and kmer.start > pair.forward.start
             )
 
-        return [k for k in kmers if maintains_overlap(k)]
+        overlapping = [k for k in self._available_fwd_kmers() if maintains_overlap(k)]
+        return sorted(overlapping, key=attrgetter("end"), reverse=True)
 
-    def _overlapping_forward_candidates(self) -> list[Kmer]:
-        """
-        Return all overlapping, forward candidates, relative to prev_pair,
-        sorted by highest end position.
-        """
-        if self._prev_pair and self._prev_pair_same_pool:
-            # Not first in either pool
-            non_crashing_kmers = self._kmers_right_of_pair(self._prev_pair_same_pool)
-            overlapping_kmers = self._kmers_maintaining_overlap(
-                non_crashing_kmers, self._prev_pair
-            )
-        elif not self._prev_pair:
-            # First primer in scheme
-            return []
-        else:
-            # First primer in pool
-            overlapping_kmers = self._kmers_maintaining_overlap(
-                self.kmers, self._prev_pair
-            )
-        return sorted(overlapping_kmers, key=attrgetter("end"), reverse=True)
-
-    def _non_overlapping_forward_candidates(self) -> list[Kmer]:
+    def _fwd_kmers_non_overlapping(self) -> list[Kmer]:
         """Return all non-overlapping, forward candidates, relative to prev_pair."""
-        if self._prev_pair:
-            return [k for k in self.kmers if k.start >= self._prev_pair.forward.end]
-        return self.kmers
+        if self._prev_pair is None:
+            return self.fwd_kmers
+        return [k for k in self.fwd_kmers if k.start >= self._prev_pair.forward.end]
 
-    def _forward_candidates(self) -> Sequence[Kmer]:
-        """Return all forward candidates (overlapping first, then gapped)"""
-        return (
-            self._overlapping_forward_candidates()
-            + self._non_overlapping_forward_candidates()
-        )
+    def _fwd_candidates(self) -> list[Kmer]:
+        """Return all forward candidates (overlapping first, then non-overlapping)"""
+        return self._fwd_kmers_maintaining_overlap() + self._fwd_kmers_non_overlapping()
 
     def interaction_checker_factory(
         self, existing_pairs: Optional[list[PrimerPair]] = None
@@ -167,11 +154,11 @@ class OverlapPriorityScheme(Scheme):
             existing_pairs=same_pool_pairs
         )
 
-        for fwd in self._forward_candidates():
+        for fwd in self._fwd_candidates():
             if interaction_checker(fwd):
                 try:
                     candidate_pairs = self.reverse_candidate_pairs(
-                        Primer(fwd.seq, fwd.start, PrimerDirection.FORWARD),
+                        Primer.from_kmer(fwd, PrimerDirection.FORWARD),
                         next_pair=next_pair,
                     )
                 except NoSuitablePrimers:
@@ -184,14 +171,10 @@ class OverlapPriorityScheme(Scheme):
 
     def execute(self) -> None:
         """Create a an overlap-priority scheme."""
-
-        last_progress = 0
-
+        logger.info("Designing scheme with <blue>overlap-priority</> strategy")
         while True:
             try:
                 self._this_pool.append(self._find_pair())
-                self.pbar.update(self.progress - last_progress)
-                last_progress = self.progress
             except NoSuitablePrimers:
                 break
 
@@ -206,7 +189,7 @@ class OverlapPriorityScheme(Scheme):
         )
         return [
             k
-            for k in self._overlapping_forward_candidates()
+            for k in self._fwd_kmers_maintaining_overlap()
             if k.start >= window[0] and k.end <= window[1]
         ]
 
@@ -276,27 +259,23 @@ class OverlapPriorityScheme(Scheme):
 
             amplicon_num += 1
 
-            fwd_missing = pair.forward.as_kmer() not in self.kmers
-            rev_missing = pair.reverse.as_kmer() not in self.kmers
+            fwd_missing = pair.forward.as_kmer() not in self.fwd_kmers
+            rev_missing = pair.reverse.as_kmer() not in self.rev_kmers
 
             if fwd_missing and not rev_missing:
                 try:
                     new_pair = self._find_replacement_fwd(pair, this_existing_pool)
-                    print(f"Replaced fwd primer for amplicon {amplicon_num}")
+                    logger.info("Replaced fwd primer for amplicon {n}", amplicon_num)
                 except NoSuitablePrimers:
-                    print(
-                        f"Unable to find replacement fwd primer for amplicon {amplicon_num}"
-                    )
+                    pass
             if rev_missing and not fwd_missing:
                 try:
                     new_pair = self._find_replacement_rev(
                         pair, next_pair, this_existing_pool
                     )
-                    print(f"Replaced rev primer for amplicon {amplicon_num}")
+                    logger.info("Replaced rev primer for amplicon {n}", amplicon_num)
                 except NoSuitablePrimers:
-                    print(
-                        f"Unable to find replacement rev primer for amplicon {amplicon_num}"
-                    )
+                    pass
 
             # Full freedom when replacing both
             if not new_pair and (fwd_missing or rev_missing):
@@ -304,9 +283,11 @@ class OverlapPriorityScheme(Scheme):
                     new_pair = self._find_pair(
                         next_pair=next_pair, same_pool_pairs=this_existing_pool
                     )
-                    print(f"Replaced both primers for amplicon {amplicon_num}")
+                    logger.info("Replaced both primers for amplicon {n}", amplicon_num)
                 except NoSuitablePrimers:
-                    print(f"Unable to replace pair {amplicon_num}")
+                    logger.warning(
+                        "Unable to replace primers for amplicon {n}", amplicon_num
+                    )
 
             self._this_pool.append(new_pair if new_pair else pair)
             this_existing_pool = existing_pools[self._pool_index]
