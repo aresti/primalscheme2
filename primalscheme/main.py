@@ -179,38 +179,49 @@ def main(
     )
 
     if kwargs["strategy"] == "o":
-        scheme = OverlapPriorityScheme(
-            primary_ref,
-            fwd_kmers=fwd_kmers,
-            rev_kmers=rev_kmers,
-            cfg=cfg,
-        )
+        with click.progressbar(
+            length=len(primary_ref.seq), label="Designing scheme"
+        ) as pbar:
+            scheme = OverlapPriorityScheme(
+                primary_ref,
+                fwd_kmers=fwd_kmers,
+                rev_kmers=rev_kmers,
+                cfg=cfg,
+                pbar=pbar,
+            )
 
-        if cfg.repair is None:
-            scheme.execute()
+            if cfg.repair is None:
+                scheme.execute()
 
-        else:
-            existing_pools: tuple[list[PrimerPair], list[PrimerPair]] = ([], [])
+            else:
+                existing_pools: tuple[list[PrimerPair], list[PrimerPair]] = ([], [])
 
-            with open(cfg.repair, newline="") as bedfile:
-                bedreader = csv.reader(bedfile, delimiter="\t")
-                for n, row in enumerate(bedreader):
-                    pool = 0 if n % 4 < 2 else 1
-                    if n % 2 == 0:
-                        fwd = Primer.from_bed_row(row)
-                    else:
-                        rev = Primer.from_bed_row(row)
-                        existing_pools[pool].append(
-                            PrimerPair(forward=fwd, reverse=rev)
-                        )
+                with open(cfg.repair, newline="") as bedfile:
+                    bedreader = csv.reader(bedfile, delimiter="\t")
+                    for n, row in enumerate(bedreader):
+                        pool = 0 if n % 4 < 2 else 1
+                        if n % 2 == 0:
+                            fwd = Primer.from_bed_row(row)
+                        else:
+                            rev = Primer.from_bed_row(row)
+                            existing_pools[pool].append(
+                                PrimerPair(forward=fwd, reverse=rev)
+                            )
 
-            scheme.repair(existing_pools)
+                scheme.repair(existing_pools)
 
         scheme.write_primer_bed()
         scheme.write_primer_gff()
         scheme.write_report()
 
         report_uri = scheme.report_filepath.as_uri()
+        logger.success(
+            "All done! Scheme created with <blue>{n_pairs}</> amplicons, "
+            "<blue>{cov} %</> coverage, <blue>{gaps}</> gaps",
+            n_pairs=len(scheme.primer_pairs()),
+            cov=scheme.percent_coverage(),
+            gaps=scheme.gap_count(),
+        )
         logger.info(report_uri)
         webbrowser.open(report_uri)
 

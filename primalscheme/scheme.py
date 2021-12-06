@@ -21,7 +21,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>
 import csv
 from operator import attrgetter
 from pathlib import Path
-from typing import Optional, Sequence
+from typing import Optional, Protocol, Sequence
 
 from jinja2 import Environment, PackageLoader, select_autoescape
 
@@ -29,7 +29,12 @@ from primalscheme.config import Config
 from primalscheme.datauri import get_data_uri
 from primalscheme.dna import SeqRecordProtocol
 from primalscheme.exceptions import NoReverseWindow, NoSuitablePrimers
-from primalscheme.primer import Kmer, Primer, PrimerDirection, PrimerPair
+from primalscheme.primer import Kmer, Insert, Primer, PrimerDirection, PrimerPair
+
+
+class ProgressBar(Protocol):
+    def update(self, n_steps: int, current_item: None = None) -> None:
+        ...
 
 
 class Scheme:
@@ -39,11 +44,13 @@ class Scheme:
         fwd_kmers: list[Kmer],
         rev_kmers: list[Kmer],
         cfg: Config,
+        pbar: ProgressBar = None,
     ):
         self.ref = ref
         self.fwd_kmers = fwd_kmers
         self.rev_kmers = rev_kmers
         self.cfg = cfg
+        self.pbar = pbar
 
         self.pools: Sequence[Sequence[PrimerPair]] = []
 
@@ -132,8 +139,30 @@ class Scheme:
             key=attrgetter("start"),
         )
 
+    def inserts(self) -> list[Insert]:
+        """Return a list of Inserts."""
+        return [pair.insert for pair in self.primer_pairs()]
+
     def _current_amplicon_num(self) -> int:
         return len(self.primer_pairs()) + 1
+
+    def gap_count(self) -> int:
+        """The total number of gaps in the scheme."""
+        gaps = 0
+        inserts = self.inserts()
+        last_covered = inserts[0].end
+        for insert in inserts[1:]:
+            if insert.start > last_covered:
+                gaps += 1
+            last_covered = insert.end
+        return gaps
+
+    def percent_coverage(self) -> float:
+        """Coverage %, with respect to the reference."""
+        covered_coords = set(
+            [x for insert in self.inserts() for x in range(insert.start, insert.end)]
+        )
+        return round(len(covered_coords) / len(self.ref.seq) * 100, 2)
 
     def primer_bed_rows(
         self,

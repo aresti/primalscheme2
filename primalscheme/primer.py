@@ -20,6 +20,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>
 
 import copy
 
+from collections import namedtuple
 from enum import Enum
 from typing import Iterable, Sequence
 
@@ -157,6 +158,9 @@ class Primer(Kmer):
         return hash((self.start, self.seq, self.direction))
 
 
+Insert = namedtuple("Insert", "start end")
+
+
 class PrimerPair:
     """Primer pair"""
 
@@ -180,6 +184,10 @@ class PrimerPair:
     @property
     def amplicon_size(self) -> int:
         return self.reverse.end - self.forward.start
+
+    @property
+    def insert(self) -> Insert:
+        return Insert(self.forward.end, self.reverse.start)
 
     def __len__(self) -> int:
         return self.amplicon_size

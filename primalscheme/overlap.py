@@ -25,7 +25,7 @@ from Bio import SeqRecord  # type: ignore
 
 from primalscheme.exceptions import NoSuitablePrimers
 from primalscheme.primer import Kmer, Primer, PrimerDirection, PrimerPair
-from primalscheme.scheme import Scheme
+from primalscheme.scheme import Scheme, ProgressBar
 from primalscheme.config import Config
 
 logger = logger.opt(colors=True)
@@ -33,9 +33,14 @@ logger = logger.opt(colors=True)
 
 class OverlapPriorityScheme(Scheme):
     def __init__(
-        self, ref: SeqRecord, fwd_kmers: list[Kmer], rev_kmers: list[Kmer], cfg: Config
+        self,
+        ref: SeqRecord,
+        fwd_kmers: list[Kmer],
+        rev_kmers: list[Kmer],
+        cfg: Config,
+        pbar: ProgressBar = None,
     ):
-        super().__init__(ref, fwd_kmers, rev_kmers, cfg)
+        super().__init__(ref, fwd_kmers, rev_kmers, cfg, pbar=pbar)
 
         self.pools: tuple[list[PrimerPair], list[PrimerPair]] = ([], [])
         self._pool_num = 0
@@ -76,6 +81,13 @@ class OverlapPriorityScheme(Scheme):
         Return the previous pair in the same pool (last but one pair in the scheme).
         """
         return self._this_pool[-1] if len(self._this_pool) else None
+
+    @property
+    def progress(self) -> int:
+        """
+        Return the end position of prev_pair, representing progress.
+        """
+        return self._prev_pair.end if self._prev_pair else 0
 
     def _available_fwd_kmers(self) -> Sequence[Kmer]:
         """Return all available forward kmers."""
@@ -171,10 +183,14 @@ class OverlapPriorityScheme(Scheme):
 
     def execute(self) -> None:
         """Create a an overlap-priority scheme."""
-        logger.info("Designing scheme with <blue>overlap-priority</> strategy")
+        last_progress = 0
+
         while True:
             try:
                 self._this_pool.append(self._find_pair())
+                if self.pbar:
+                    self.pbar.update(self.progress - last_progress)
+                    last_progress = self.progress
             except NoSuitablePrimers:
                 break
 
