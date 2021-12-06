@@ -23,9 +23,9 @@ import copy
 from enum import Enum
 from typing import Iterable, Sequence
 
-from primaldeep import dna
-from primaldeep.config import Config
-from primaldeep.interactions import interaction_check
+from primalscheme import dna
+from primalscheme.config import Config
+from primalscheme.interactions import interaction_check
 
 
 class Kmer:

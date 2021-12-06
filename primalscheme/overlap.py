@@ -23,10 +23,10 @@ from typing import Callable, Optional, Sequence
 
 from Bio import SeqRecord  # type: ignore
 
-from primaldeep.exceptions import NoSuitablePrimers
-from primaldeep.primer import Kmer, Primer, PrimerDirection, PrimerPair
-from primaldeep.scheme import Scheme
-from primaldeep.config import Config
+from primalscheme.exceptions import NoSuitablePrimers
+from primalscheme.primer import Kmer, Primer, PrimerDirection, PrimerPair
+from primalscheme.scheme import Scheme
+from primalscheme.config import Config
 
 logger = logger.opt(colors=True)
 

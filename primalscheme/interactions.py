@@ -1,7 +1,7 @@
 import re
 import parasail  # type: ignore
 
-from primaldeep.dna import CIGAR_REGEX, tm, ThermoConfig
+from primalscheme.dna import CIGAR_REGEX, tm, ThermoConfig
 
 
 def cig_check(

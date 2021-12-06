@@ -25,11 +25,11 @@ from typing import Optional, Sequence
 
 from jinja2 import Environment, PackageLoader, select_autoescape
 
-from primaldeep.config import Config
-from primaldeep.datauri import get_data_uri
-from primaldeep.dna import SeqRecordProtocol
-from primaldeep.exceptions import NoReverseWindow, NoSuitablePrimers
-from primaldeep.primer import Kmer, Primer, PrimerDirection, PrimerPair
+from primalscheme.config import Config
+from primalscheme.datauri import get_data_uri
+from primalscheme.dna import SeqRecordProtocol
+from primalscheme.exceptions import NoReverseWindow, NoSuitablePrimers
+from primalscheme.primer import Kmer, Primer, PrimerDirection, PrimerPair
 
 
 class Scheme:
@@ -258,7 +258,7 @@ class Scheme:
 
         # HTML Template
         jinja_env = Environment(
-            loader=PackageLoader("primaldeep"), autoescape=select_autoescape()
+            loader=PackageLoader("primalscheme"), autoescape=select_autoescape()
         )
         template = jinja_env.get_template("report_template.html")
         rendered = template.render(data=data)

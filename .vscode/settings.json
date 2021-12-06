@@ -1,5 +1,5 @@
 {
-  "python.pythonPath": "/Users/andysmith/Library/Caches/pypoetry/virtualenvs/primaldeep-4QE1GPml-py3.9/bin/python",
+  "python.pythonPath": "/Users/andysmith/Library/Caches/pypoetry/virtualenvs/primalscheme-4QE1GPml-py3.9/bin/python",
   "python.linting.mypyEnabled": true,
   "python.linting.mypyCategorySeverity.error": "Warning",
   "python.linting.mypyArgs": [

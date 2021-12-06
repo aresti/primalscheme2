@@ -31,9 +31,9 @@ from typing import Any, TextIO
 
 from Bio import SeqIO  # type: ignore
 
-from primaldeep.config import Config
-from primaldeep.overlap import OverlapPriorityScheme
-from primaldeep.primer import (
+from primalscheme.config import Config
+from primalscheme.overlap import OverlapPriorityScheme
+from primalscheme.primer import (
     Kmer,
     Primer,
     PrimerPair,

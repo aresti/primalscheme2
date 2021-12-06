@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "primaldeep"
+name = "primalscheme"
 version = "2.0.0rc1"
 description = ""
 authors = ["Andrew Smith <andysmith.d@gmail.com>", "Josh Quick <j.quick@bham.ac.uk>"]
@@ -24,4 +24,4 @@ requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.scripts]
-primalscheme = 'primaldeep.main:main'
+primalscheme = 'primalscheme.main:main'
