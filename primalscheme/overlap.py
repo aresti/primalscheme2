@@ -17,7 +17,7 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>
 """
-from loguru import logger # type: ignore
+from loguru import logger
 from operator import attrgetter
 from typing import Callable, Optional, Sequence
 
@@ -140,7 +140,7 @@ class OverlapPriorityScheme(Scheme):
 
     def interaction_checker_factory(
         self, existing_pairs: Optional[list[PrimerPair]] = None
-    ) -> Callable[[Kmer], bool]:
+    ) -> Callable[[Primer], bool]:
         """
         Return a function that performs the required interaction checks for a candidate
         Primer against all previously selected primers in the current pool.
@@ -154,8 +154,8 @@ class OverlapPriorityScheme(Scheme):
 
         def inner_func(primer: Primer) -> bool:
             return not (
-                primer.forms_hairpin(self.cfg) or
-                primer.interacts_with([primer], self.cfg)
+                primer.forms_hairpin(self.cfg)
+                or primer.interacts_with([primer], self.cfg)
                 or primer.interacts_with(check_primers, self.cfg)
             )
 
@@ -172,7 +172,7 @@ class OverlapPriorityScheme(Scheme):
         )
 
         for fwd_kmer in self._fwd_candidates():
-            fwd_primer = Primer.from_kmer(fwd_kmer, PrimerDirection.FORWARD) 
+            fwd_primer = Primer.from_kmer(fwd_kmer, PrimerDirection.FORWARD)
 
             # Find pairs
             try:

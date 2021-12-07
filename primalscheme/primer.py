@@ -142,7 +142,7 @@ class Primer(Kmer):
             if self.direction == PrimerDirection.FORWARD
             else self.reverse_complement,
         )
-    
+
     def calc_hairpin_tm(self, cfg: dna.ThermoConfig) -> float:
         """Return the primer3 hairpin thermo object for the kmer sequence."""
         return dna.hairpin(self.seq, cfg).tm
@@ -150,7 +150,7 @@ class Primer(Kmer):
     def forms_hairpin(self, cfg: Config) -> bool:
         """Is primer hairpin tm above max?"""
         return self.calc_hairpin_tm(cfg) > cfg.primer_hairpin_th_max
-    
+
     def __str__(self) -> str:
         return f"{self.direction}, {self.seq}, {self.start}"
 

@@ -181,19 +181,15 @@ def main(
                 cfg=cfg,
             )
             scheme.repair(existing_pools)
-        
         else:
             with click.progressbar(
                 length=len(primary_ref.seq), label="Designing scheme"
             ) as pbar:
                 scheme = OverlapPriorityScheme(
-                    primary_ref,
-                    kmers=kmers_passing_thermo,
-                    cfg=cfg,
-                    pbar=pbar
-                ) 
+                    primary_ref, kmers=kmers_passing_thermo, cfg=cfg, pbar=pbar
+                )
                 scheme.execute()
-                
+
         scheme.write_primer_bed()
         scheme.write_primer_gff()
         scheme.write_report()
