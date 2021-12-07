@@ -26,7 +26,7 @@ from typing import Iterable, Sequence
 
 from primalscheme import dna
 from primalscheme.config import Config
-from primalscheme.interactions import interaction_check
+from primalscheme.interactions import seqs_may_interact
 
 
 class Kmer:
@@ -55,7 +55,7 @@ class Kmer:
 
     def interacts_with(self, kmers: Sequence["Kmer"], cfg: dna.ThermoConfig) -> bool:
         """Return true if the kmer interacts with any of a sequence of kmers."""
-        return any(check_kmer_interaction(self, kmer, cfg) for kmer in kmers)
+        return any(kmers_may_interact(self, kmer, cfg) for kmer in kmers)
 
     def passes_thermo_checks(self, cfg: Config) -> bool:
         """Are all kmer thermo values below threshold?"""
@@ -64,14 +64,6 @@ class Kmer:
             and (cfg.primer_tm_min <= self.calc_tm(cfg) <= cfg.primer_tm_max)
             and (self.max_homo <= cfg.primer_homopolymer_max)
         )
-
-    def calc_hairpin_tm(self, cfg: dna.ThermoConfig) -> float:
-        """Return the primer3 hairpin thermo object for the kmer sequence."""
-        return dna.hairpin(self.seq, cfg).tm
-
-    def passes_hairpin_check(self, cfg: Config) -> bool:
-        """Is primer hairpin tm below max?"""
-        return self.calc_hairpin_tm(cfg) <= cfg.primer_hairpin_th_max
 
     def as_reverse(self) -> "Kmer":
         """Return a kmer at the same position with reverse complement seq"""
@@ -123,7 +115,11 @@ class Primer(Kmer):
 
     @classmethod
     def from_kmer(cls, kmer: Kmer, direction: PrimerDirection) -> "Primer":
-        return cls(kmer.seq, kmer.start, direction)
+        if direction == PrimerDirection.FORWARD:
+            seq = kmer.seq
+        else:
+            seq = kmer.reverse_complement
+        return cls(seq, kmer.start, direction)
 
     @classmethod
     def from_bed_row(cls, row: list[str]) -> "Primer":
@@ -134,16 +130,29 @@ class Primer(Kmer):
         start = int(row[1])
         return cls(seq, start, direction)
 
-    def __str__(self) -> str:
-        return f"{self.direction}, {self.seq}, {self.start}"
-
     @property
     def end(self) -> int:
         """Primer end position."""
         return self.start + len(self)
 
     def as_kmer(self) -> Kmer:
-        return Kmer(start=self.start, seq=self.seq)
+        return Kmer(
+            start=self.start,
+            seq=self.seq
+            if self.direction == PrimerDirection.FORWARD
+            else self.reverse_complement,
+        )
+    
+    def calc_hairpin_tm(self, cfg: dna.ThermoConfig) -> float:
+        """Return the primer3 hairpin thermo object for the kmer sequence."""
+        return dna.hairpin(self.seq, cfg).tm
+
+    def forms_hairpin(self, cfg: Config) -> bool:
+        """Is primer hairpin tm above max?"""
+        return self.calc_hairpin_tm(cfg) > cfg.primer_hairpin_th_max
+    
+    def __str__(self) -> str:
+        return f"{self.direction}, {self.seq}, {self.start}"
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Primer):
@@ -210,7 +219,7 @@ def filter_unambiguous_kmers(kmers: Iterable[Kmer]) -> Iterable[Kmer]:
     ]
 
 
-def check_kmer_interaction(a: "Kmer", b: "Kmer", cfg: dna.ThermoConfig) -> bool:
-    return interaction_check(a.seq, b.seq, cfg) or interaction_check(
+def kmers_may_interact(a: "Kmer", b: "Kmer", cfg: dna.ThermoConfig) -> bool:
+    return seqs_may_interact(a.seq, b.seq, cfg) or seqs_may_interact(
         b.reverse_complement, a.reverse_complement, cfg
     )

@@ -41,14 +41,12 @@ class Scheme:
     def __init__(
         self,
         ref: SeqRecordProtocol,
-        fwd_kmers: list[Kmer],
-        rev_kmers: list[Kmer],
+        kmers: list[Kmer],
         cfg: Config,
         pbar: ProgressBar = None,
     ):
         self.ref = ref
-        self.fwd_kmers = fwd_kmers
-        self.rev_kmers = rev_kmers
+        self.kmers = kmers
         self.cfg = cfg
         self.pbar = pbar
 
@@ -96,9 +94,7 @@ class Scheme:
         reverse primer, satisfying amplicon size constraints.
         """
         window = self.reverse_primer_window(fwd, next_pair=next_pair)
-        return [
-            k for k in self.rev_kmers if k.start >= window[0] and k.end <= window[1]
-        ]
+        return [k for k in self.kmers if k.start >= window[0] and k.end <= window[1]]
 
     def reverse_candidate_pairs(
         self, fwd: Primer, next_pair: Optional[PrimerPair] = None

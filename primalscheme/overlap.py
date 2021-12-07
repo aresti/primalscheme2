@@ -17,7 +17,7 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>
 """
-from loguru import logger
+from loguru import logger # type: ignore
 from operator import attrgetter
 from typing import Callable, Optional, Sequence
 
@@ -35,12 +35,11 @@ class OverlapPriorityScheme(Scheme):
     def __init__(
         self,
         ref: SeqRecord,
-        fwd_kmers: list[Kmer],
-        rev_kmers: list[Kmer],
+        kmers: list[Kmer],
         cfg: Config,
         pbar: ProgressBar = None,
     ):
-        super().__init__(ref, fwd_kmers, rev_kmers, cfg, pbar=pbar)
+        super().__init__(ref, kmers, cfg, pbar=pbar)
 
         self.pools: tuple[list[PrimerPair], list[PrimerPair]] = ([], [])
         self._pool_num = 0
@@ -93,7 +92,7 @@ class OverlapPriorityScheme(Scheme):
         """Return all available forward kmers."""
         if self._prev_pair is None:
             # Empty scheme
-            return self.fwd_kmers
+            return self.kmers
 
         if self._prev_pair_same_pool is None:
             # Empty pool
@@ -104,7 +103,7 @@ class OverlapPriorityScheme(Scheme):
         ref_end = len(self.ref.seq)
         return [
             k
-            for k in self.fwd_kmers
+            for k in self.kmers
             if k.start >= start_from and k.start + self.cfg.amplicon_size_min <= ref_end
         ]
 
@@ -132,8 +131,8 @@ class OverlapPriorityScheme(Scheme):
     def _fwd_kmers_non_overlapping(self) -> list[Kmer]:
         """Return all non-overlapping, forward candidates, relative to prev_pair."""
         if self._prev_pair is None:
-            return self.fwd_kmers
-        return [k for k in self.fwd_kmers if k.start >= self._prev_pair.forward.end]
+            return self.kmers
+        return [k for k in self.kmers if k.start >= self._prev_pair.forward.end]
 
     def _fwd_candidates(self) -> list[Kmer]:
         """Return all forward candidates (overlapping first, then non-overlapping)"""
@@ -144,7 +143,7 @@ class OverlapPriorityScheme(Scheme):
     ) -> Callable[[Kmer], bool]:
         """
         Return a function that performs the required interaction checks for a candidate
-        Kmer against all previously selected primers in the current pool.
+        Primer against all previously selected primers in the current pool.
         """
 
         check_primers = self._this_pool_primers
@@ -153,10 +152,11 @@ class OverlapPriorityScheme(Scheme):
                 p for pp in existing_pairs for p in (pp.forward, pp.reverse)
             ]
 
-        def inner_func(kmer: Kmer) -> bool:
+        def inner_func(primer: Primer) -> bool:
             return not (
-                kmer.interacts_with([kmer], self.cfg)
-                or kmer.interacts_with(check_primers, self.cfg)
+                primer.forms_hairpin(self.cfg) or
+                primer.interacts_with([primer], self.cfg)
+                or primer.interacts_with(check_primers, self.cfg)
             )
 
         return inner_func
@@ -167,24 +167,28 @@ class OverlapPriorityScheme(Scheme):
         same_pool_pairs: Optional[list[PrimerPair]] = None,
     ) -> PrimerPair:
         """Find the next PrimerPair for the scheme."""
-        interaction_checker = self.interaction_checker_factory(
+        passes_interaction_checks = self.interaction_checker_factory(
             existing_pairs=same_pool_pairs
         )
 
-        candidates = self._fwd_candidates()
+        for fwd_kmer in self._fwd_candidates():
+            fwd_primer = Primer.from_kmer(fwd_kmer, PrimerDirection.FORWARD) 
 
-        for fwd in candidates:
+            # Find pairs
             try:
                 candidate_pairs = self.reverse_candidate_pairs(
-                    Primer.from_kmer(fwd, PrimerDirection.FORWARD),
+                    fwd_primer,
                     next_pair=next_pair,
                 )
             except NoSuitablePrimers:
                 continue
-            if interaction_checker(fwd):
-                for pair in candidate_pairs:
-                    if interaction_checker(pair.reverse):
-                        return pair
+
+            # Check interactions
+            if not passes_interaction_checks(fwd_primer):
+                continue
+            for pair in candidate_pairs:
+                if passes_interaction_checks(pair.reverse):
+                    return pair
 
         raise NoSuitablePrimers
 
@@ -282,8 +286,8 @@ class OverlapPriorityScheme(Scheme):
 
             amplicon_num += 1
 
-            fwd_missing = pair.forward.as_kmer() not in self.fwd_kmers
-            rev_missing = pair.reverse.as_kmer() not in self.rev_kmers
+            fwd_missing = pair.forward.as_kmer() not in self.kmers
+            rev_missing = pair.reverse.as_kmer() not in self.kmers
 
             if fwd_missing and not rev_missing:
                 try:

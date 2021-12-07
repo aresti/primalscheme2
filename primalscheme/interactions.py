@@ -30,8 +30,6 @@ def cig_check(
 
         identity = matches / (matches + mismatches)
         ol_tm = tm(overlap, cfg)
-        # if ol_tm > cfg.dimer_max_tm and identity > cfg.dimer_min_identity:
-        #     print("Interaction found!")
         return ol_tm > cfg.dimer_max_tm and identity > cfg.dimer_min_identity
 
     return False  # no interaction
@@ -46,10 +44,11 @@ def parasail_align(seq1: str, seq2: str) -> parasail.Traceback:
     return trace
 
 
-def interaction_check(seq1: str, seq2: str, cfg: ThermoConfig) -> bool:
+def seqs_may_interact(seq1: str, seq2: str, cfg: ThermoConfig) -> bool:
     trace = parasail_align(seq1, seq2)
     traceback = trace.get_traceback()
     matches = re.findall(CIGAR_REGEX, trace.cigar.decode.decode())
-    return cig_check(matches, traceback.query, cfg) or cig_check(
+    may_interact = cig_check(matches, traceback.query, cfg) or cig_check(
         matches[::-1], traceback.ref[::-1], cfg
     )
+    return may_interact

@@ -129,8 +129,6 @@ def main(
 
     primary_ref = fastas[0]
     kmers_passing_thermo: list[Kmer] = []
-    fwd_kmers: list[Kmer] = []
-    rev_kmers: list[Kmer] = []
 
     # Digestion
     kmer_sizes = range(cfg.primer_size_min, cfg.primer_size_max + 1)
@@ -161,31 +159,13 @@ def main(
         n=len(kmers_passing_thermo),
     )
 
-    # Hairpin check
-    with click.progressbar(
-        kmers_passing_thermo, file=sys.stderr, label="Screening hairpin interactions"
-    ) as hairpin_bar:
-        for fwd_kmer in hairpin_bar:
-            if fwd_kmer.passes_hairpin_check(cfg):
-                fwd_kmers.append(fwd_kmer)
-            rev_kmer = fwd_kmer.as_reverse()
-            if rev_kmer.passes_hairpin_check(cfg):
-                rev_kmers.append(rev_kmer)
-
-    logger.info(
-        "Found <blue>{n_fwd}</> fwd, <blue>{n_rev}</> rev kmers passing hairpin check",
-        n_fwd=len(fwd_kmers),
-        n_rev=len(rev_kmers),
-    )
-
     if kwargs["strategy"] == "o":
         with click.progressbar(
             length=len(primary_ref.seq), label="Designing scheme"
         ) as pbar:
             scheme = OverlapPriorityScheme(
                 primary_ref,
-                fwd_kmers=fwd_kmers,
-                rev_kmers=rev_kmers,
+                kmers=kmers_passing_thermo,
                 cfg=cfg,
                 pbar=pbar,
             )
