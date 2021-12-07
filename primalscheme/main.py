@@ -160,36 +160,40 @@ def main(
     )
 
     if kwargs["strategy"] == "o":
-        with click.progressbar(
-            length=len(primary_ref.seq), label="Designing scheme"
-        ) as pbar:
+        if cfg.repair:
+            existing_pools: tuple[list[PrimerPair], list[PrimerPair]] = ([], [])
+
+            with open(cfg.repair, newline="") as bedfile:
+                bedreader = csv.reader(bedfile, delimiter="\t")
+                for n, row in enumerate(bedreader):
+                    pool = 0 if n % 4 < 2 else 1
+                    if n % 2 == 0:
+                        fwd = Primer.from_bed_row(row)
+                    else:
+                        rev = Primer.from_bed_row(row)
+                        existing_pools[pool].append(
+                            PrimerPair(forward=fwd, reverse=rev)
+                        )
+
             scheme = OverlapPriorityScheme(
                 primary_ref,
                 kmers=kmers_passing_thermo,
                 cfg=cfg,
-                pbar=pbar,
             )
-
-            if cfg.repair is None:
+            scheme.repair(existing_pools)
+        
+        else:
+            with click.progressbar(
+                length=len(primary_ref.seq), label="Designing scheme"
+            ) as pbar:
+                scheme = OverlapPriorityScheme(
+                    primary_ref,
+                    kmers=kmers_passing_thermo,
+                    cfg=cfg,
+                    pbar=pbar
+                ) 
                 scheme.execute()
-
-            else:
-                existing_pools: tuple[list[PrimerPair], list[PrimerPair]] = ([], [])
-
-                with open(cfg.repair, newline="") as bedfile:
-                    bedreader = csv.reader(bedfile, delimiter="\t")
-                    for n, row in enumerate(bedreader):
-                        pool = 0 if n % 4 < 2 else 1
-                        if n % 2 == 0:
-                            fwd = Primer.from_bed_row(row)
-                        else:
-                            rev = Primer.from_bed_row(row)
-                            existing_pools[pool].append(
-                                PrimerPair(forward=fwd, reverse=rev)
-                            )
-
-                scheme.repair(existing_pools)
-
+                
         scheme.write_primer_bed()
         scheme.write_primer_gff()
         scheme.write_report()
