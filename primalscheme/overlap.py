@@ -273,18 +273,18 @@ class OverlapPriorityScheme(Scheme):
     def repair(self, existing_pools: tuple[list[PrimerPair], list[PrimerPair]]) -> None:
         """Repair an existing scheme against a new reference."""
 
-        amplicon_num = 0
         this_existing_pool = existing_pools[self._pool_index]
         other_existing_pool = existing_pools[(self._pool_index + 1) % 2]
+        ordered_pairs = sorted(
+            this_existing_pool + other_existing_pool, key=attrgetter("start")
+        )
 
-        while len(this_existing_pool):
+        for n, pair in enumerate(ordered_pairs):
+            amplicon_num = n + 1
             next_pair: Optional[PrimerPair] = (
-                other_existing_pool[0] if len(other_existing_pool) else None
+                ordered_pairs[n + 1] if len(ordered_pairs) > n + 1 else None
             )
-            pair = this_existing_pool.pop(0)
             new_pair = None
-
-            amplicon_num += 1
 
             fwd_missing = pair.forward.as_kmer() not in self.kmers
             rev_missing = pair.reverse.as_kmer() not in self.kmers
@@ -294,6 +294,10 @@ class OverlapPriorityScheme(Scheme):
                     new_pair = self._find_replacement_fwd(pair, this_existing_pool)
                     logger.info("Replaced fwd primer for amplicon {}", amplicon_num)
                 except NoSuitablePrimers:
+                    logger.info(
+                        "<yellow>Unable to replace fwd primer for amplicon {}, trying both</yellow>",
+                        amplicon_num,
+                    )
                     pass
             if rev_missing and not fwd_missing:
                 try:
@@ -302,6 +306,10 @@ class OverlapPriorityScheme(Scheme):
                     )
                     logger.info("Replaced rev primer for amplicon {}", amplicon_num)
                 except NoSuitablePrimers:
+                    logger.info(
+                        "<yellow>Unable to replace rev primer for amplicon {}, trying both</yellow>",
+                        amplicon_num,
+                    )
                     pass
 
             # Full freedom when replacing both
