@@ -138,6 +138,22 @@ class OverlapPriorityScheme(Scheme):
         """Return all forward candidates (overlapping first, then non-overlapping)"""
         return self._fwd_kmers_maintaining_overlap() + self._fwd_kmers_non_overlapping()
 
+    def sorted_reverse_candidate_pairs(
+        self, fwd: Primer, next_pair: Optional[PrimerPair] = None
+    ) -> list[PrimerPair]:
+        """
+        Given a forward Primer, return a list of candidate PrimerPairs that
+        satisfy amplicon size constraints, sorted by amplicon size deviation from mean.
+        """
+        pairs = self.reverse_candidate_pairs(fwd, next_pair=next_pair)
+
+        if not len(pairs):
+            raise NoSuitablePrimers
+
+        # Sort by deviation from target
+        pairs.sort(key=lambda p: abs(self.cfg.amplicon_size_target - p.amplicon_size))
+        return pairs
+
     def interaction_checker_factory(
         self, existing_pairs: Optional[list[PrimerPair]] = None
     ) -> Callable[[Primer], bool]:
@@ -176,7 +192,7 @@ class OverlapPriorityScheme(Scheme):
 
             # Find pairs
             try:
-                candidate_pairs = self.reverse_candidate_pairs(
+                candidate_pairs = self.sorted_reverse_candidate_pairs(
                     fwd_primer,
                     next_pair=next_pair,
                 )
@@ -248,7 +264,7 @@ class OverlapPriorityScheme(Scheme):
         fwd = pair.forward
         return [
             pp
-            for pp in self.reverse_candidate_pairs(fwd)
+            for pp in self.sorted_reverse_candidate_pairs(fwd)
             if pp.reverse.start >= next_pair.forward.end
         ]
 
@@ -262,7 +278,7 @@ class OverlapPriorityScheme(Scheme):
             existing_pairs=existing_pairs
         )
         if next_pair is None:
-            candidate_pairs = self.reverse_candidate_pairs(pair.forward)
+            candidate_pairs = self.sorted_reverse_candidate_pairs(pair.forward)
         else:
             candidate_pairs = self._replacement_rev_pairs(pair, next_pair)
         for candidate in candidate_pairs:

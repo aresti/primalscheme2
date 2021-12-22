@@ -28,7 +28,7 @@ from jinja2 import Environment, PackageLoader, select_autoescape
 from primalscheme.config import Config
 from primalscheme.datauri import get_data_uri
 from primalscheme.dna import SeqRecordProtocol
-from primalscheme.exceptions import NoReverseWindow, NoSuitablePrimers
+from primalscheme.exceptions import NoReverseWindow
 from primalscheme.primer import Kmer, Insert, Primer, PrimerDirection, PrimerPair
 
 
@@ -101,7 +101,7 @@ class Scheme:
     ) -> list[PrimerPair]:
         """
         Given a forward Primer, return a list of candidate PrimerPairs that
-        satisfy amplicon size constraints, sorted by amplicon size deviation from mean.
+        satisfy amplicon size constraints.
 
         If next_pair is provided, constrain to those pairs that would maintain overlap.
         """
@@ -111,20 +111,13 @@ class Scheme:
                 for kmer in self.reverse_candidate_kmers(fwd, next_pair=next_pair)
             ]
         except NoReverseWindow:
-            raise NoSuitablePrimers
+            return []
 
         # Generate all pair combinations
         pairs = [PrimerPair(fwd, rev) for rev in reverse_primers]
 
         # Remove pairs that generate an amplicon size less than min
-        pairs = [pair for pair in pairs if len(pair) >= self.cfg.amplicon_size_min]
-
-        if not len(pairs):
-            raise NoSuitablePrimers
-
-        # Sort by deviation from target
-        pairs.sort(key=lambda p: abs(self.cfg.amplicon_size_target - p.amplicon_size))
-        return pairs
+        return [pair for pair in pairs if len(pair) >= self.cfg.amplicon_size_min]
 
     def primer_pairs(self) -> list[PrimerPair]:
         """
