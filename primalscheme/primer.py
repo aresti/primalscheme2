@@ -53,9 +53,13 @@ class Kmer:
         """Return Tm for the kmer sequence."""
         return dna.tm(self.seq, cfg)
 
-    def interacts_with(self, kmers: Sequence["Kmer"], cfg: dna.ThermoConfig) -> bool:
+    def interacts_with(
+        self, kmers: Sequence["Kmer"], cfg: dna.ThermoConfig, verbose: bool = False
+    ) -> bool:
         """Return true if the kmer interacts with any of a sequence of kmers."""
-        return any(kmers_may_interact(self, kmer, cfg) for kmer in kmers)
+        return any(
+            kmers_may_interact(self, kmer, cfg, verbose=verbose) for kmer in kmers
+        )
 
     def passes_thermo_checks(self, cfg: Config) -> bool:
         """Are all kmer thermo values below threshold?"""
@@ -219,7 +223,9 @@ def filter_unambiguous_kmers(kmers: Iterable[Kmer]) -> Iterable[Kmer]:
     ]
 
 
-def kmers_may_interact(a: "Kmer", b: "Kmer", cfg: dna.ThermoConfig) -> bool:
-    return seqs_may_interact(a.seq, b.seq, cfg) or seqs_may_interact(
-        b.reverse_complement, a.reverse_complement, cfg
+def kmers_may_interact(
+    a: "Kmer", b: "Kmer", cfg: dna.ThermoConfig, verbose: bool = False
+) -> bool:
+    return seqs_may_interact(a.seq, b.seq, cfg, verbose=verbose) or seqs_may_interact(
+        b.reverse_complement, a.reverse_complement, cfg, verbose=verbose
     )

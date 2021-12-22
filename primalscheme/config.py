@@ -35,6 +35,7 @@ class Config:
     prefix = "scheme"
     force = False
     repair: Optional[pathlib.Path] = None
+    repair_interactions = False
 
     amplicon_size_min = 380
     amplicon_size_max = 420

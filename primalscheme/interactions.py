@@ -2,6 +2,7 @@ import re
 import parasail  # type: ignore
 
 from primalscheme.dna import CIGAR_REGEX, tm, ThermoConfig
+from loguru import logger
 
 
 def cig_check(
@@ -44,11 +45,18 @@ def parasail_align(seq1: str, seq2: str) -> parasail.Traceback:
     return trace
 
 
-def seqs_may_interact(seq1: str, seq2: str, cfg: ThermoConfig) -> bool:
+def seqs_may_interact(
+    seq1: str, seq2: str, cfg: ThermoConfig, verbose: bool = False
+) -> bool:
     trace = parasail_align(seq1, seq2)
     traceback = trace.get_traceback()
     matches = re.findall(CIGAR_REGEX, trace.cigar.decode.decode())
-    may_interact = cig_check(matches, traceback.query, cfg) or cig_check(
+    interaction_predicted = cig_check(matches, traceback.query, cfg) or cig_check(
         matches[::-1], traceback.ref[::-1], cfg
     )
-    return may_interact
+    if interaction_predicted and verbose:
+        logger.debug("Interaction predicted between '{}' and '{}'", seq1, seq2)
+        logger.debug(traceback.query)
+        logger.debug(traceback.comp)
+        logger.debug(traceback.ref)
+    return interaction_predicted

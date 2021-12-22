@@ -50,6 +50,9 @@ class Scheme:
         self.cfg = cfg
         self.pbar = pbar
 
+        # Pre-sort kmers
+        kmers.sort(key=attrgetter("start"))
+
         self.pools: Sequence[Sequence[PrimerPair]] = []
 
     def reverse_primer_window_start(

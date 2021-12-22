@@ -155,11 +155,12 @@ class OverlapPriorityScheme(Scheme):
         return pairs
 
     def interaction_checker_factory(
-        self, existing_pairs: Optional[list[PrimerPair]] = None
+        self, existing_pairs: Optional[list[PrimerPair]] = None, verbose: bool = False
     ) -> Callable[[Primer], bool]:
         """
         Return a function that performs the required interaction checks for a candidate
         Primer against all previously selected primers in the current pool.
+        Returns True where no interactions are found.
         """
 
         check_primers = self._this_pool_primers
@@ -169,10 +170,12 @@ class OverlapPriorityScheme(Scheme):
             ]
 
         def inner_func(primer: Primer) -> bool:
+            if primer.forms_hairpin(self.cfg):
+                logger.trace(f"Primer {primer}: hairpin predicted.")
+                return False
             return not (
-                primer.forms_hairpin(self.cfg)
-                or primer.interacts_with([primer], self.cfg)
-                or primer.interacts_with(check_primers, self.cfg)
+                primer.interacts_with([primer], self.cfg, verbose=verbose)
+                or primer.interacts_with(check_primers, self.cfg, verbose=verbose)
             )
 
         return inner_func
@@ -286,7 +289,11 @@ class OverlapPriorityScheme(Scheme):
                 return candidate
         raise NoSuitablePrimers
 
-    def repair(self, existing_pools: tuple[list[PrimerPair], list[PrimerPair]]) -> None:
+    def repair(
+        self,
+        existing_pools: tuple[list[PrimerPair], list[PrimerPair]],
+        fix_interactions=False,
+    ) -> None:
         """Repair an existing scheme against a new reference."""
 
         this_existing_pool = existing_pools[self._pool_index]
@@ -302,10 +309,38 @@ class OverlapPriorityScheme(Scheme):
             )
             new_pair = None
 
-            fwd_missing = pair.forward.as_kmer() not in self.kmers
-            rev_missing = pair.reverse.as_kmer() not in self.kmers
+            repair_fwd = pair.forward.as_kmer() not in self.kmers
+            repair_rev = pair.reverse.as_kmer() not in self.kmers
 
-            if fwd_missing and not rev_missing:
+            if repair_fwd:
+                logger.info(
+                    "<red>Mismatch detected against new ref for amplicon {} fwd</red>",
+                    amplicon_num,
+                )
+            if repair_rev:
+                logger.info(
+                    "<red>Mismatch detected against new ref for amplicon {} rev</red>",
+                    amplicon_num,
+                )
+
+            if fix_interactions:
+                passes_interaction_checks = self.interaction_checker_factory(
+                    existing_pairs=this_existing_pool, verbose=True
+                )
+                if not (repair_fwd or passes_interaction_checks(pair.forward)):
+                    repair_fwd = True
+                    logger.info(
+                        "<red>Interaction detected for amplicon {} fwd</red>",
+                        amplicon_num,
+                    )
+                if not (repair_rev or passes_interaction_checks(pair.reverse)):
+                    repair_rev = True
+                    logger.info(
+                        "<red>Interaction detected for amplicon {} rev</red>",
+                        amplicon_num,
+                    )
+
+            if repair_fwd and not repair_rev:
                 try:
                     new_pair = self._find_replacement_fwd(pair, this_existing_pool)
                     logger.info("Replaced fwd primer for amplicon {}", amplicon_num)
@@ -315,7 +350,7 @@ class OverlapPriorityScheme(Scheme):
                         amplicon_num,
                     )
                     pass
-            if rev_missing and not fwd_missing:
+            if repair_rev and not repair_fwd:
                 try:
                     new_pair = self._find_replacement_rev(
                         pair, next_pair, this_existing_pool
@@ -329,7 +364,7 @@ class OverlapPriorityScheme(Scheme):
                     pass
 
             # Full freedom when replacing both
-            if not new_pair and (fwd_missing or rev_missing):
+            if not new_pair and (repair_fwd or repair_rev):
                 try:
                     new_pair = self._find_pair(
                         next_pair=next_pair, same_pool_pairs=this_existing_pool

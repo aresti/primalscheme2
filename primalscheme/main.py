@@ -40,6 +40,7 @@ from primalscheme.primer import (
     digest_seq,
     filter_unambiguous_kmers,
 )
+from primalscheme.scheme import Scheme
 
 
 logger = logger.opt(colors=True)
@@ -86,7 +87,8 @@ def check_or_create_outpath(path: pathlib.Path, force: bool = False) -> pathlib.
     default=Config.min_overlap,
 )
 @click.option("--force/--no-force", default=Config.force)
-@click.option("--strategy", type=click.Choice(("o", "p")), default="o")
+@click.option("--debug/--no-debug", default=False)
+@click.option("-s", "--strategy", type=click.Choice(("o", "j")), default="o")
 @click.option(
     "--prefix",
     type=click.STRING,
@@ -105,13 +107,21 @@ def check_or_create_outpath(path: pathlib.Path, force: bool = False) -> pathlib.
         path_type=pathlib.Path,
     ),
 )
+@click.option(
+    "--repair-interactions/--no-repair-interactions", default=Config.repair_interactions
+)
 def main(
     input: list[TextIO],
     **kwargs: Any,
 ) -> None:
 
     logger.remove()  # Remove default stderr logger
-    logger.add(sys.stderr, colorize=True, format="{message}")
+    logger.add(
+        sys.stderr,
+        colorize=True,
+        format="{message}",
+        level="DEBUG" if kwargs["debug"] else "INFO",
+    )
 
     if not len(input):
         # noop  - see note in click docs
@@ -152,8 +162,6 @@ def main(
                 k for k in unambiguous if k.passes_thermo_checks(cfg)
             )
 
-    kmers_passing_thermo.sort(key=attrgetter("start"))
-
     logger.info(
         "Found <blue>{n}</> non-ambiguous kmers passing thermo filter",
         n=len(kmers_passing_thermo),
@@ -175,12 +183,12 @@ def main(
                             PrimerPair(forward=fwd, reverse=rev)
                         )
 
-            scheme = OverlapPriorityScheme(
+            scheme: Scheme = OverlapPriorityScheme(
                 primary_ref,
                 kmers=kmers_passing_thermo,
                 cfg=cfg,
             )
-            scheme.repair(existing_pools)
+            scheme.repair(existing_pools, fix_interactions=cfg.repair_interactions)
         else:
             with click.progressbar(
                 length=len(primary_ref.seq), label="Designing scheme"
