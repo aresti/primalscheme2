@@ -88,23 +88,27 @@ class OverlapPriorityScheme(Scheme):
         """
         return self._prev_pair.end if self._prev_pair else 0
 
-    def _available_fwd_kmers(self) -> Sequence[Kmer]:
-        """Return all available forward kmers."""
+    def _available_fwd_kmers(self) -> list[Kmer]:
+        """Return all available (non-crashing) forward kmers."""
         if self._prev_pair is None:
             # Empty scheme
             return self.kmers
 
         if self._prev_pair_same_pool is None:
-            # Empty pool
+            # Empty pool, only requirement is to maintain progress
             start_from = self._prev_pair.forward.start + 1
         else:
-            # Not first in either pool
+            # Not first in either pool, must not crash
             start_from = self._prev_pair_same_pool.reverse.end
+
+        # Also, we don't want to fwd kmers that can't possibly make a large enough amplicon
         ref_end = len(self.ref.seq)
+        last_useful_start = ref_end - self.cfg.amplicon_size_min
+
         return [
             k
             for k in self.kmers
-            if k.start >= start_from and k.start + self.cfg.amplicon_size_min <= ref_end
+            if k.start >= start_from and k.start <= last_useful_start
         ]
 
     def _fwd_kmers_maintaining_overlap(
@@ -118,21 +122,17 @@ class OverlapPriorityScheme(Scheme):
             return []
 
         pair = self._prev_pair
+        end_loc = pair.reverse.start - self.cfg.min_overlap
 
         def maintains_overlap(kmer: Kmer) -> bool:
-            return (
-                kmer.end - 1 + self.cfg.min_overlap < pair.reverse.start
-                and kmer.start > pair.forward.start
-            )
+            return kmer.end - 1 < end_loc and kmer.start > pair.forward.start
 
         overlapping = [k for k in self._available_fwd_kmers() if maintains_overlap(k)]
         return sorted(overlapping, key=attrgetter("end"), reverse=True)
 
     def _fwd_kmers_non_overlapping(self) -> list[Kmer]:
         """Return all non-overlapping, forward candidates, relative to prev_pair."""
-        if self._prev_pair is None:
-            return self.kmers
-        return [k for k in self.kmers if k.start >= self._prev_pair.forward.end]
+        return self._available_fwd_kmers()[len(self._fwd_kmers_maintaining_overlap()) :]
 
     def _fwd_candidates(self) -> list[Kmer]:
         """Return all forward candidates (overlapping first, then non-overlapping)"""
