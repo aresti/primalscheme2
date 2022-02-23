@@ -41,7 +41,7 @@ def parasail_align(seq1: str, seq2: str) -> parasail.Traceback:
     OPEN = 10
     EXTEND = 5
     # Semi-Global, do not penalize gaps at beginning and end of both sequences
-    trace = parasail.sg_trace_scan(seq1, seq2, OPEN, EXTEND, MATRIX)
+    trace = parasail.sg_trace_scan(seq1, seq2, OPEN, EXTEND, parasail.dnafull)
     return trace
 
 

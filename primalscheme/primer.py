@@ -61,8 +61,16 @@ class Kmer:
             kmers_may_interact(self, kmer, cfg, verbose=verbose) for kmer in kmers
         )
 
+    def expand_ambiguities(self) -> Sequence["Kmer"]:
+        return [Kmer(seq, self.start) for seq in dna.extend_ambiguous_dna(self.seq)]
+
     def passes_thermo_checks(self, cfg: Config) -> bool:
         """Are all kmer thermo values below threshold?"""
+        if not all(base.upper() in dna.UNAMBIGUOUS_DNA for base in self.seq):
+            return all(
+                unambiguous_kmer.passes_thermo_checks(cfg)
+                for unambiguous_kmer in self.expand_ambiguities()
+            )
         return (
             (cfg.primer_gc_min <= self.gc <= cfg.primer_gc_max)
             and (cfg.primer_tm_min <= self.calc_tm(cfg) <= cfg.primer_tm_max)
@@ -214,13 +222,16 @@ def digest_seq(seq: str, kmer_size: int) -> Sequence[Kmer]:
     return [Kmer(seq[i : i + kmer_size], i) for i in range((len(seq) - kmer_size) + 1)]
 
 
-def filter_unambiguous_kmers(kmers: Iterable[Kmer]) -> Iterable[Kmer]:
-    """Filter: kmers with only unambiguous bases"""
-    return [
-        kmer
-        for kmer in kmers
-        if all(base.upper() in dna.UNAMBIGUOUS_DNA for base in kmer.seq)
-    ]
+def filter_allowed_kmers(kmers: Iterable[Kmer]) -> Iterable[Kmer]:
+    """Filter: kmers with only unambiguous bases or max number of supported ambiguity codes"""
+
+    def supported_ambig(kmer: "Kmer") -> bool:
+        return all(base.upper() in dna.UNAMBIGUOUS_DNA for base in kmer.seq) or (
+            sum(base.upper() in dna.SUPPORTED_AMBIGUITIES for base in kmer.seq) <= 1
+            and all(base.upper() in dna.SUPPORTED_DNA for base in kmer.seq)
+        )
+
+    return [kmer for kmer in kmers if supported_ambig(kmer)]
 
 
 def kmers_may_interact(

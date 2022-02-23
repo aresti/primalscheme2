@@ -21,13 +21,34 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>
 
 import re
 
-from itertools import groupby
+from itertools import groupby, product
 from typing_extensions import Protocol
 
 from primer3 import calcTm as p3_calc_tm, calcHairpin as p3_calc_hairpin  # type: ignore
 
 UNAMBIGUOUS_DNA = "ACGT"
-AMBIGUOUS_DNA = UNAMBIGUOUS_DNA + "RYWSMKHBVDN-"
+AMBIGUOUS_DNA = {
+    "A": "A",
+    "C": "C",
+    "G": "G",
+    "T": "T",
+    "M": "AC",
+    "R": "AG",
+    "W": "AT",
+    "S": "CG",
+    "Y": "CT",
+    "K": "GT",
+    "V": "ACG",
+    "H": "ACT",
+    "D": "AGT",
+    "B": "CGT",
+    "X": "GATC",
+    "N": "GATC",
+}
+SUPPORTED_AMBIGUITIES = "".join(
+    code for (code, bases) in AMBIGUOUS_DNA.items() if len(bases) == 2
+)
+SUPPORTED_DNA = UNAMBIGUOUS_DNA + SUPPORTED_AMBIGUITIES
 AMBIGUOUS_DNA_COMPLEMENT = {
     "A": "T",
     "C": "G",
@@ -126,11 +147,17 @@ def reverse(seq: str) -> str:
 
 def complement(seq: str) -> str:
     """Returns the complement of seq"""
-    if not all(base.upper() in UNAMBIGUOUS_DNA for base in seq):
-        raise ValueError(f"Sequence bases must be one of {UNAMBIGUOUS_DNA}")
+    if not all(base.upper() in SUPPORTED_DNA for base in seq):
+        raise ValueError(f"Sequence bases must be one of {SUPPORTED_DNA}")
     return "".join(AMBIGUOUS_DNA_COMPLEMENT[base.upper()] for base in seq)
 
 
 def reverse_complement(seq: str) -> str:
     """Returns the reverse complement of seq"""
     return reverse(complement(seq))
+
+
+def extend_ambiguous_dna(seq) -> list[str]:
+    """Return list of all possible sequences given an ambiguous DNA input"""
+    d = AMBIGUOUS_DNA
+    return list(map("".join, product(*map(d.get, seq))))

@@ -32,13 +32,14 @@ from typing import Any, TextIO
 from Bio import SeqIO  # type: ignore
 
 from primalscheme.config import Config
+from primalscheme.jackhammer import JackhammerScheme
 from primalscheme.overlap import OverlapPriorityScheme
 from primalscheme.primer import (
     Kmer,
     Primer,
     PrimerPair,
     digest_seq,
-    filter_unambiguous_kmers,
+    filter_allowed_kmers,
 )
 from primalscheme.scheme import Scheme
 
@@ -157,7 +158,7 @@ def main(
             digested = [
                 Kmer(k.seq, k.start) for k in digest_seq(str(primary_ref.seq), size)
             ]
-            unambiguous = filter_unambiguous_kmers(digested)
+            unambiguous = filter_allowed_kmers(digested)
             kmers_passing_thermo.extend(
                 k for k in unambiguous if k.passes_thermo_checks(cfg)
             )
