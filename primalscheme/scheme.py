@@ -214,7 +214,7 @@ class Scheme:
                 ".",
                 ".",
                 ".",
-                f"ID=AMP{n+1};Color={colors[pool_num - 1 % len(colors)]}",
+                f"ID=AMP{n+1};Color={colors[(pool_num - 1) % (len(colors) - 1)]}",
             ]
             rows[pool_num - 1].append(tuple(map(str, row)))
 
