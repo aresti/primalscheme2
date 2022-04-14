@@ -12,10 +12,11 @@ parasail = "^1.2.4"
 biopython = "^1.79"
 Jinja2 = "^3.0.3"
 loguru = "^0.5.3"
+diskcache = "^5.4.0"
 
 [tool.poetry.dev-dependencies]
 pytest = "^5.2"
-mypy = "^0.812"
+mypy = "^0.930"
 black = "^21.5b1"
 flake8 = "^3.9.2"
 

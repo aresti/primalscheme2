@@ -37,7 +37,6 @@ def cig_check(
 
 
 def parasail_align(seq1: str, seq2: str) -> parasail.Traceback:
-    MATRIX = parasail.matrix_create("ACGT", 2, -1)
     OPEN = 10
     EXTEND = 5
     # Semi-Global, do not penalize gaps at beginning and end of both sequences

@@ -23,7 +23,6 @@ import re
 
 from itertools import groupby, product
 from typing_extensions import Protocol
-
 from primer3 import calcTm as p3_calc_tm, calcHairpin as p3_calc_hairpin  # type: ignore
 
 UNAMBIGUOUS_DNA = "ACGT"

@@ -22,10 +22,10 @@ import copy
 
 from collections import namedtuple
 from enum import Enum
-from typing import Iterable, Sequence
+from typing import Iterable, Optional, Sequence
 
 from primalscheme import dna
-from primalscheme.config import Config
+from primalscheme.config import Config, ProgressBar
 from primalscheme.interactions import seqs_may_interact
 
 
@@ -223,7 +223,10 @@ def digest_seq(seq: str, kmer_size: int) -> Sequence[Kmer]:
 
 
 def filter_allowed_kmers(kmers: Iterable[Kmer]) -> Iterable[Kmer]:
-    """Filter: kmers with only unambiguous bases or max number of supported ambiguity codes"""
+    """
+    Filter: kmers with only unambiguous bases or max number of supported ambiguity
+    codes.
+    """
 
     def supported_ambig(kmer: "Kmer") -> bool:
         return all(base.upper() in dna.UNAMBIGUOUS_DNA for base in kmer.seq) or (
@@ -234,9 +237,31 @@ def filter_allowed_kmers(kmers: Iterable[Kmer]) -> Iterable[Kmer]:
     return [kmer for kmer in kmers if supported_ambig(kmer)]
 
 
+def digest_to_passing_kmers(
+    seq: str, cfg: Config, pbar: Optional[ProgressBar] = None
+) -> list[Kmer]:
+    """
+    Digest a sequence into kmers of size range primer_size_min to primer_size_max),
+    that consist only of allowed bases and pass thermo checks.
+    """
+    passing: list[Kmer] = []
+    kmer_sizes = range(cfg.primer_size_min, cfg.primer_size_max + 1)
+
+    for size in kmer_sizes:
+        digested = [Kmer(k.seq, k.start) for k in digest_seq(str(seq), size)]
+        allowed = filter_allowed_kmers(digested)
+        passing.extend(k for k in allowed if k.passes_thermo_checks(cfg))
+
+        if pbar:
+            pbar.update(1)
+
+    return passing
+
+
 def kmers_may_interact(
     a: "Kmer", b: "Kmer", cfg: dna.ThermoConfig, verbose: bool = False
 ) -> bool:
+    """Might 2 Kmers interact?"""
     return seqs_may_interact(a.seq, b.seq, cfg, verbose=verbose) or seqs_may_interact(
         b.reverse_complement, a.reverse_complement, cfg, verbose=verbose
     )

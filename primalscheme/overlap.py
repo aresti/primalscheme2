@@ -292,7 +292,7 @@ class OverlapPriorityScheme(Scheme):
     def repair(
         self,
         existing_pools: tuple[list[PrimerPair], list[PrimerPair]],
-        fix_interactions=False,
+        fix_interactions: bool = False,
     ) -> None:
         """Repair an existing scheme against a new reference."""
 

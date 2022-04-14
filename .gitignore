@@ -51,5 +51,11 @@ coverage.xml
 .pytest_cache/
 cover/
 
-# test outputs
+# PrimalScheme
 output/
+.primalscheme_cache
+tests/inputs
+
+# OS
+*.DS_Store
+.python-version

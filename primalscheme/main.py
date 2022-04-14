@@ -19,11 +19,13 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>
 """
 import click
 import csv
+import hashlib
 import os
 import pathlib
 import sys
 import webbrowser
 
+from diskcache import Cache
 from loguru import logger
 from operator import attrgetter
 from pathlib import Path
@@ -34,13 +36,7 @@ from Bio import SeqIO  # type: ignore
 from primalscheme.config import Config
 from primalscheme.jackhammer import JackhammerScheme
 from primalscheme.overlap import OverlapPriorityScheme
-from primalscheme.primer import (
-    Kmer,
-    Primer,
-    PrimerPair,
-    digest_seq,
-    filter_allowed_kmers,
-)
+from primalscheme.primer import Kmer, Primer, PrimerPair, digest_to_passing_kmers
 from primalscheme.scheme import Scheme
 
 
@@ -142,26 +138,31 @@ def main(
     kmers_passing_thermo: list[Kmer] = []
 
     # Digestion
-    kmer_sizes = range(cfg.primer_size_min, cfg.primer_size_max + 1)
-    logger.info(
-        "Digesting reference <blue>{ref}</> into kmers [{min}-{max}]-mers",
-        ref=primary_ref.id,
-        min=cfg.primer_size_min,
-        max=cfg.primer_size_max,
-    )
+    cache = Cache("./.primalscheme_cache")
+    checksum = hashlib.md5(bytes(primary_ref.seq)).hexdigest()
+    if checksum in cache:
+        logger.info(
+            "Found cached kmers for reference <blue>{ref}</>",
+            ref=primary_ref.id,
+            min=cfg.primer_size_min,
+            max=cfg.primer_size_max,
+        )
+        kmers_passing_thermo = cache[checksum]
+    else:
+        logger.info(
+            "Digesting reference <blue>{ref}</> into kmers [{min}-{max}]-mers",
+            ref=primary_ref.id,
+            min=cfg.primer_size_min,
+            max=cfg.primer_size_max,
+        )
 
-    with click.progressbar(
-        kmer_sizes, file=sys.stderr, label=f"{cfg.primer_size_min}-mers"
-    ) as kmer_sizes_bar:
-        for size in kmer_sizes_bar:
-            kmer_sizes_bar.label = f"{size}-mers"
-            digested = [
-                Kmer(k.seq, k.start) for k in digest_seq(str(primary_ref.seq), size)
-            ]
-            unambiguous = filter_allowed_kmers(digested)
-            kmers_passing_thermo.extend(
-                k for k in unambiguous if k.passes_thermo_checks(cfg)
+        with click.progressbar(
+            length=cfg.primer_size_max - cfg.primer_size_min + 1, label="Digesting"
+        ) as pbar:
+            kmers_passing_thermo = digest_to_passing_kmers(
+                primary_ref.seq, cfg, pbar=pbar
             )
+        cache[checksum] = kmers_passing_thermo
 
     logger.info(
         "Found <blue>{n}</> non-ambiguous kmers passing thermo filter",
