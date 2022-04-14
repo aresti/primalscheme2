@@ -87,6 +87,18 @@ def check_or_create_outpath(path: pathlib.Path, force: bool = False) -> pathlib.
 @click.option("--debug/--no-debug", default=False)
 @click.option("-s", "--strategy", type=click.Choice(("o", "j")), default="o")
 @click.option(
+    "-p",
+    "--jackhammer-pools",
+    type=click.IntRange(1),
+    default=Config.jackhammer_pools,
+)
+@click.option(
+    "-d",
+    "--jackhammer-density",
+    type=click.FloatRange(0.1, 0.9),
+    default=Config.jackhammer_density,
+)
+@click.option(
     "--prefix",
     type=click.STRING,
     help="Prefix name for your outputs.",
