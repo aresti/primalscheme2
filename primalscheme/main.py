@@ -199,20 +199,30 @@ def main(
                 )
                 scheme.execute()
 
-        scheme.write_primer_bed()
-        scheme.write_primer_gff()
-        scheme.write_report()
+    elif kwargs["strategy"] == "j":
+        with click.progressbar(
+            length=cfg.jackhammer_pools, label="Designing scheme"
+        ) as pbar:
+            scheme = JackhammerScheme(
+                primary_ref, kmers=kmers_passing_thermo, cfg=cfg, pbar=pbar
+            )
+            scheme.execute()
 
-        report_uri = scheme.report_filepath.as_uri()
-        logger.success(
-            "All done! Scheme created with <blue>{n_pairs}</> amplicons, "
-            "<blue>{cov} %</> coverage, <blue>{gaps}</> gaps",
-            n_pairs=len(scheme.primer_pairs()),
-            cov=scheme.percent_coverage(),
-            gaps=scheme.gap_count(),
-        )
-        logger.info(report_uri)
-        webbrowser.open(report_uri)
+    # Output
+    scheme.write_primer_bed()
+    # scheme.write_primer_gff()
+    scheme.write_report()
+
+    report_uri = scheme.report_filepath.as_uri()
+    logger.success(
+        "All done! Scheme created with <blue>{n_pairs}</> amplicons, "
+        "<blue>{cov} %</> coverage, <blue>{gaps}</> gaps",
+        n_pairs=len(scheme.primer_pairs()),
+        cov=scheme.percent_coverage(),
+        gaps=scheme.gap_count(),
+    )
+    logger.info(report_uri)
+    webbrowser.open(report_uri)
 
 
 if __name__ == "__main__":

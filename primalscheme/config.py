@@ -21,7 +21,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>
 import statistics
 import pathlib
 
-from typing import Any, Optional
+from typing import Any, Optional, Protocol
 
 
 class Config:
@@ -65,6 +65,9 @@ class Config:
     dimer_max_tm = -10.0
     dimer_min_identity = 0.8
 
+    jackhammer_pools = 4
+    jackhammer_density = 0.5
+
     def __init__(self, **kwargs: Any) -> None:
         for key, value in kwargs.items():
             if hasattr(self, key):
@@ -101,3 +104,8 @@ class Config:
 
 
 CLEAR_LINE = "\r\033[K"
+
+
+class ProgressBar(Protocol):
+    def update(self, n_steps: int, current_item: None = None) -> None:
+        ...

@@ -21,20 +21,15 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>
 import csv
 from operator import attrgetter
 from pathlib import Path
-from typing import Optional, Protocol, Sequence
+from typing import Optional, Sequence
 
 from jinja2 import Environment, PackageLoader, select_autoescape
 
-from primalscheme.config import Config
+from primalscheme.config import Config, ProgressBar
 from primalscheme.datauri import get_data_uri
 from primalscheme.dna import SeqRecordProtocol
 from primalscheme.exceptions import NoReverseWindow
 from primalscheme.primer import Kmer, Insert, Primer, PrimerDirection, PrimerPair
-
-
-class ProgressBar(Protocol):
-    def update(self, n_steps: int, current_item: None = None) -> None:
-        ...
 
 
 class Scheme:
@@ -200,16 +195,16 @@ class Scheme:
             cw = csv.writer(fh, delimiter="\t")
             cw.writerows(self.primer_bed_rows())
 
-    def amplicon_primer_gff_rows(self) -> list[tuple[str, ...]]:
+    def amplicon_primer_gff_rows(self) -> list[list[tuple[str, ...]]]:
 
-        rows = []
+        rows = [[] for _ in self.pools]
         ref_id = self.ref.id
         primer_name_template = self.cfg.prefix + "_{}_{}"
 
         # Amplicons
         for n, pair in enumerate(self.primer_pairs()):
             pool_num = n % len(self.pools) + 1
-            color = "#274e13" if pool_num == 1 else "#16537e"
+            colors = ["#CEB992", "#73937E", "#585563", "#5B2E48", "#471323"]
             row = [
                 ref_id,
                 "primalscheme",
@@ -219,9 +214,9 @@ class Scheme:
                 ".",
                 ".",
                 ".",
-                f"ID=AMP{n+1};Color={color}",
+                f"ID=AMP{n+1};Color={colors[pool_num - 1 % len(colors)]}",
             ]
-            rows.append(tuple(map(str, row)))
+            rows[pool_num - 1].append(tuple(map(str, row)))
 
             # Primers
             for direction in PrimerDirection:
@@ -240,26 +235,29 @@ class Scheme:
                     ".",
                     f"ID={name};Name={name};Parent=AMP{n+1};Note=POOL_{pool_num}",
                 ]
-                rows.append(tuple(map(str, row)))
+                rows[pool_num - 1].append(tuple(map(str, row)))
 
         return rows
 
-    def amplicon_primer_gff(self) -> str:
+    def amplicon_primer_gff(self) -> list[str]:
         """
-        Return GFF3 formatted multiline str for all amplicons and associated primers in
+        Return GFF3 formatted multiline strs for all amplicons and associated primers in
         the scheme.
         """
-        tsv_rows = ["\t".join(map(str, row)) for row in self.amplicon_primer_gff_rows()]
-        return "##gff-version 3\n" + "\n".join(tsv_rows)
+        gff_tracks = []
+        for pool in self.amplicon_primer_gff_rows():
+            pool_tsv_rows = ["\t".join(map(str, row)) for row in pool]
+            gff_tracks.append("##gff-version 3\n" + "\n".join(pool_tsv_rows))
+        return gff_tracks
 
-    def write_primer_gff(self) -> None:
-        """
-        Write a GFF3 file for all amplicons and associated primers in the scheme.
-        """
-        filepath = self.cfg.output / f"{self.cfg.prefix}.primer.gff"
+    # def write_primer_gff(self) -> None:
+    #     """
+    #     Write a GFF3 file for all amplicons and associated primers in the scheme.
+    #     """
+    #     filepath = self.cfg.output / f"{self.cfg.prefix}.primer.gff"
 
-        with filepath.open("w") as fh:
-            fh.write(self.amplicon_primer_gff())
+    #     with filepath.open("w") as fh:
+    #         fh.write(self.amplicon_primer_gff())
 
     @property
     def report_filepath(self) -> Path:
@@ -274,7 +272,9 @@ class Scheme:
         # Data JSON
         data = {
             "reference": get_data_uri(self.ref.format("fasta")),
-            "primerTrack": get_data_uri(self.amplicon_primer_gff()),
+            "primerTracks": [
+                get_data_uri(track) for track in self.amplicon_primer_gff()
+            ],
         }
 
         # HTML Template
