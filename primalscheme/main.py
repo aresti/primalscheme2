@@ -27,7 +27,6 @@ import webbrowser
 
 from diskcache import Cache
 from loguru import logger
-from operator import attrgetter
 from pathlib import Path
 from typing import Any, TextIO
 
@@ -119,6 +118,7 @@ def check_or_create_outpath(path: pathlib.Path, force: bool = False) -> pathlib.
 @click.option(
     "--repair-interactions/--no-repair-interactions", default=Config.repair_interactions
 )
+@click.option("-v", "-verbose", default=False)
 def main(
     input: list[TextIO],
     **kwargs: Any,
@@ -145,6 +145,8 @@ def main(
         cfg.output = Path(os.getcwd()) / cfg.output
 
     check_or_create_outpath(cfg.output, force=cfg.force)
+
+    logger.add(cfg.output / f"{cfg.prefix}-log.txt", format="{message}", level="DEBUG")
 
     primary_ref = fastas[0]
     kmers_passing_thermo: list[Kmer] = []

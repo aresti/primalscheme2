@@ -162,7 +162,7 @@ class Scheme:
         primer_name_template = self.cfg.prefix + "_{}_{}"
 
         for n, pair in enumerate(self.primer_pairs()):
-            pool_num = n % len(self.pools) + 1
+            assert pair.pool is not None
             for direction in PrimerDirection:
                 name = primer_name_template.format(
                     n + 1, "LEFT" if direction == PrimerDirection.FORWARD else "RIGHT"
@@ -175,7 +175,7 @@ class Scheme:
                     start,
                     end,
                     name,
-                    pool_num,
+                    pair.pool,
                     direction.value,
                     p.seq,
                 )
@@ -196,14 +196,13 @@ class Scheme:
             cw.writerows(self.primer_bed_rows())
 
     def amplicon_primer_gff_rows(self) -> list[list[tuple[str, ...]]]:
-
         rows = [[] for _ in self.pools]
         ref_id = self.ref.id
         primer_name_template = self.cfg.prefix + "_{}_{}"
 
         # Amplicons
         for n, pair in enumerate(self.primer_pairs()):
-            pool_num = n % len(self.pools) + 1
+            assert pair.pool is not None
             colors = ["#CEB992", "#73937E", "#585563", "#5B2E48", "#471323"]
             row = [
                 ref_id,
@@ -214,9 +213,9 @@ class Scheme:
                 ".",
                 ".",
                 ".",
-                f"ID=AMP{n+1};Color={colors[(pool_num - 1) % (len(colors) - 1)]}",
+                f"ID=AMP{n+1};Color={colors[(pair.pool - 1) % (len(colors) - 1)]}",
             ]
-            rows[pool_num - 1].append(tuple(map(str, row)))
+            rows[pair.pool - 1].append(tuple(map(str, row)))
 
             # Primers
             for direction in PrimerDirection:
@@ -233,9 +232,9 @@ class Scheme:
                     ".",
                     ".",
                     ".",
-                    f"ID={name};Name={name};Parent=AMP{n+1};Note=POOL_{pool_num}",
+                    f"ID={name};Name={name};Parent=AMP{n+1};Note=POOL_{pair.pool}",
                 ]
-                rows[pool_num - 1].append(tuple(map(str, row)))
+                rows[pair.pool - 1].append(tuple(map(str, row)))
 
         return rows
 

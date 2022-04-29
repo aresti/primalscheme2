@@ -185,7 +185,7 @@ Insert = namedtuple("Insert", "start end")
 class PrimerPair:
     """Primer pair"""
 
-    __slots__ = "forward", "reverse"
+    __slots__ = "forward", "reverse", "pool"
 
     def __init__(self, forward: Primer, reverse: Primer):
         if reverse.start <= forward.end:
@@ -193,6 +193,7 @@ class PrimerPair:
 
         self.forward = forward
         self.reverse = reverse
+        self.pool: Optional[int] = None
 
     @property
     def start(self) -> int:

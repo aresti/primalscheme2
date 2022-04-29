@@ -171,7 +171,7 @@ class OverlapPriorityScheme(Scheme):
 
         def inner_func(primer: Primer) -> bool:
             if primer.forms_hairpin(self.cfg):
-                logger.trace(f"Primer {primer}: hairpin predicted.")
+                logger.debug(f"Primer {primer}: hairpin predicted.")
                 return False
             return not (
                 primer.interacts_with([primer], self.cfg, verbose=verbose)
@@ -217,7 +217,9 @@ class OverlapPriorityScheme(Scheme):
 
         while True:
             try:
-                self._this_pool.append(self._find_pair())
+                pair = self._find_pair()
+                pair.pool = self._pool_num
+                self._this_pool.append(pair)
                 if self.pbar:
                     self.pbar.update(self.progress - last_progress)
                     last_progress = self.progress

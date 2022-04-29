@@ -46,83 +46,97 @@ class JackhammerScheme(Scheme):
 
     @property
     def spacing(self) -> int:
+        """Ideal spacing between amplicons, for the given density."""
         return int(self.cfg.amplicon_size_target / self.cfg.jackhammer_density)
 
     def execute(self) -> None:
+        """Execute the scheme design."""
         for n, pool in enumerate(self.pools):
             offset = int(n * self.spacing / len(self.pools))
-            pool.extend(JackhammerPool(scheme=self, offset=offset).execute())
+            pool.extend(JackhammerPool(scheme=self, num=n, offset=offset).execute())
 
             if self.pbar:
                 self.pbar.update(1)
 
 
 class JackhammerPool:
-    def __init__(self, scheme: JackhammerScheme, offset: int):
+    def __init__(self, scheme: JackhammerScheme, num: int, offset: int):
         self.scheme = scheme
+        self.num = num
         self.offset = offset
 
         self.pairs: list[PrimerPair] = []
+        self._amplicon_num = 0
 
     @property
     def _prev_pair(self) -> Optional[PrimerPair]:
-        """
-        Return the previous pair.
-        """
+        """Previous pair in the pool."""
         return self.pairs[-1] if len(self.pairs) else None
 
     @property
-    def _amplicon_num(self) -> int:
-        return len(self.pairs)
-
-    @property
     def primers(self) -> list[Primer]:
-        """
-        Return a flat list of the primers in this pool.
-        """
+        """A flat list of the primers in this pool."""
         return [p for pp in self.pairs for p in (pp.forward, pp.reverse)]
 
     @property
     def _next_optimal_start_position(self) -> int:
+        """Next optimal start position to maintain ideal spacing."""
         return self.offset + self._amplicon_num * self.scheme.spacing
 
+    @property
+    def _ref_end(self) -> int:
+        return len(self.scheme.ref.seq)
+
+    @property
+    def _last_start_for_end(self) -> int:
+        """
+        The last start position of a forward primer, forming a potential amplicon of
+        min size, that would not extend past the end of the reference.
+        """
+        return self._ref_end - self.scheme.cfg.amplicon_size_min
+
+    @property
+    def _last_start_for_cell(self) -> int:
+        """
+        The last start position of a forward primer, forming a potential amplicon of
+        min size, that would not breach the next optimum start position.
+        """
+        return (
+            (self._amplicon_num + 1) * self.scheme.spacing
+            - self.scheme.cfg.amplicon_size_min
+            + self.offset
+        )
+
+    @property
+    def _last_useful_start(self) -> int:
+        """
+        The last useful start position of a forward primer for the current amplicon.
+        """
+        return min(self._last_start_for_cell, self._last_start_for_end)
+
     def _available_fwd_kmers(self) -> list[Kmer]:
-        """Return all available (non-crashing) forward kmers."""
+        """All available (non-crashing) forward kmers."""
         if self._prev_pair is None:
             # Empty scheme
             return self.scheme.kmers
 
         start_from = self._prev_pair.reverse.end
 
-        # We don't want fwd kmers that would result in the amplicon extending beyond
-        # the next optimum start position
-        last_start_for_cell = (
-            (self._amplicon_num + 1) * self.scheme.spacing
-            - self.scheme.cfg.amplicon_size_min
-            + self.offset
-        )
-
-        # Also, we don't want to fwd kmers that can't possibly make a large enough
-        # amplicon
-        ref_end = len(self.scheme.ref.seq)
-        last_start_for_end = ref_end - self.scheme.cfg.amplicon_size_min
-
-        last_useful_start = min(last_start_for_cell, last_start_for_end)
-
         return [
             k
             for k in self.scheme.kmers
-            if k.start >= start_from and k.start <= last_useful_start
+            if k.start >= start_from and k.start <= self._last_useful_start
         ]
 
     def _sorted_fwd_kmers(self) -> list[Kmer]:
+        """Forward kmers, sorted by deviation from optimal start position."""
         available_kmers = self._available_fwd_kmers()
         return sorted(
             available_kmers,
             key=lambda k: abs(self._next_optimal_start_position - k.start),
         )
 
-    def interaction_checker_factory(
+    def _interaction_checker_factory(
         self, existing_pairs: Optional[list[PrimerPair]] = None, verbose: bool = False
     ) -> Callable[[Primer], bool]:
         """
@@ -137,20 +151,36 @@ class JackhammerPool:
                 p for pp in existing_pairs for p in (pp.forward, pp.reverse)
             ]
 
-        def inner_func(primer: Primer) -> bool:
+        def inner_func(primer: Primer, fwd: Primer = None) -> bool:
+            # Hairpin
             if primer.forms_hairpin(self.scheme.cfg):
-                logger.trace(f"Primer {primer}: hairpin predicted.")
+                logger.debug(f"Primer {primer}: hairpin predicted.")
                 return False
-            return not (
-                primer.interacts_with([primer], self.scheme.cfg, verbose=verbose)
-                or primer.interacts_with(
-                    check_primers, self.scheme.cfg, verbose=verbose
+
+            # Self
+            if primer.interacts_with([primer], self.scheme.cfg, verbose=verbose):
+                logger.debug(f"Primer {primer}: interacts with self.")
+                return False
+
+            # Previous pairs
+            if primer.interacts_with(check_primers, self.scheme.cfg, verbose=verbose):
+                logger.debug(
+                    f"Primer {primer}: interacts with another primer in the pool"
                 )
-            )
+                return False
+
+            # Forward primer
+            if fwd and primer.interacts_with([fwd], self.scheme.cfg, verbose=verbose):
+                logger.debug(
+                    f"Reverse primer {primer}: interacts with the selected forward primer."
+                )
+                return False
+
+            return True
 
         return inner_func
 
-    def sorted_reverse_candidate_pairs(self, fwd: Primer) -> list[PrimerPair]:
+    def _sorted_reverse_candidate_pairs(self, fwd: Primer) -> list[PrimerPair]:
         """
         Given a forward Primer, return a list of candidate PrimerPairs that
         satisfy amplicon size constraints, sorted by amplicon size deviation from mean.
@@ -170,7 +200,7 @@ class JackhammerPool:
         self, same_pool_pairs: Optional[list[PrimerPair]] = None
     ) -> PrimerPair:
         """Find the next PrimerPair for the scheme."""
-        passes_interaction_checks = self.interaction_checker_factory(
+        passes_interaction_checks = self._interaction_checker_factory(
             existing_pairs=same_pool_pairs
         )
 
@@ -179,7 +209,7 @@ class JackhammerPool:
 
             # Find pairs
             try:
-                candidate_pairs = self.sorted_reverse_candidate_pairs(fwd_primer)
+                candidate_pairs = self._sorted_reverse_candidate_pairs(fwd_primer)
             except NoSuitablePrimers:
                 continue
 
@@ -187,16 +217,22 @@ class JackhammerPool:
             if not passes_interaction_checks(fwd_primer):
                 continue
             for pair in candidate_pairs:
-                if passes_interaction_checks(pair.reverse):
+                if passes_interaction_checks(pair.reverse, fwd=fwd_primer):
                     return pair
 
         raise NoSuitablePrimers
 
     def execute(self) -> list[PrimerPair]:
+        """Execute the design of the pool."""
         while True:
             try:
-                self.pairs.append(self._find_pair())
+                pair = self._find_pair()
+                pair.pool = self.num
+                self.pairs.append(pair)
             except NoSuitablePrimers:
-                break
+                if self._last_useful_start == self._last_start_for_end:
+                    # End of scheme
+                    break
+            self._amplicon_num += 1
 
         return self.pairs
