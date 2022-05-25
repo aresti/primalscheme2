@@ -233,7 +233,7 @@ class JackhammerPool:
         while True:
             try:
                 pair = self._find_pair()
-                pair.pool = self.num
+                pair.pool = self.num + 1
                 self.pairs.append(pair)
             except NoSuitablePrimers:
                 if self._last_useful_start == self._last_start_for_end:

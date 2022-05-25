@@ -42,7 +42,6 @@ class OverlapPriorityScheme(Scheme):
         super().__init__(ref, kmers, cfg, pbar=pbar)
 
         self.pools: tuple[list[PrimerPair], list[PrimerPair]] = ([], [])
-        self._pool_num = 0
 
     @property
     def _pool_index(self) -> int:
@@ -101,7 +100,8 @@ class OverlapPriorityScheme(Scheme):
             # Not first in either pool, must not crash
             start_from = self._prev_pair_same_pool.reverse.end
 
-        # Also, we don't want to fwd kmers that can't possibly make a large enough amplicon
+        # Also, we don't want to fwd kmers that can't possibly make a large enough
+        # amplicon
         ref_end = len(self.ref.seq)
         last_useful_start = ref_end - self.cfg.amplicon_size_min
 
@@ -218,7 +218,7 @@ class OverlapPriorityScheme(Scheme):
         while True:
             try:
                 pair = self._find_pair()
-                pair.pool = self._pool_num
+                pair.pool = self._pool_index + 1
                 self._this_pool.append(pair)
                 if self.pbar:
                     self.pbar.update(self.progress - last_progress)
