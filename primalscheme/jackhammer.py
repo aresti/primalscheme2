@@ -17,6 +17,8 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>
 """
+import multiprocessing as mp
+import concurrent.futures
 from loguru import logger
 from typing import Callable, Optional
 
@@ -38,7 +40,7 @@ class JackhammerScheme(Scheme):
         cfg: Config,
         pbar: ProgressBar = None,
     ):
-        super().__init__(ref, kmers, cfg, pbar=pbar)
+        super().__init__(ref, kmers, cfg)
 
         self.pools: tuple[list[PrimerPair], ...] = tuple(
             [] for _ in range(self.cfg.jackhammer_pools)
@@ -49,14 +51,18 @@ class JackhammerScheme(Scheme):
         """Ideal spacing between amplicons, for the given density."""
         return int(self.cfg.amplicon_size_target / self.cfg.jackhammer_density)
 
+    def _execute_pool(self, n: int) -> list[PrimerPair]:
+        offset = int(n * self.spacing / len(self.pools))
+        return JackhammerPool(scheme=self, num=n, offset=offset).execute()
+
     def execute(self) -> None:
         """Execute the scheme design."""
-        for n, pool in enumerate(self.pools):
-            offset = int(n * self.spacing / len(self.pools))
-            pool.extend(JackhammerPool(scheme=self, num=n, offset=offset).execute())
-
-            if self.pbar:
-                self.pbar.update(1)
+        with concurrent.futures.ProcessPoolExecutor() as executor:
+            pool_range = range(len(self.pools))
+            for n, pairs in zip(
+                pool_range, executor.map(self._execute_pool, pool_range)
+            ):
+                self.pools[n].extend(pairs)
 
 
 class JackhammerPool:
@@ -151,7 +157,7 @@ class JackhammerPool:
                 p for pp in existing_pairs for p in (pp.forward, pp.reverse)
             ]
 
-        def inner_func(primer: Primer, fwd: Primer = None) -> bool:
+        def interaction_checker(primer: Primer, fwd: Primer = None) -> bool:
             # Hairpin
             if primer.forms_hairpin(self.scheme.cfg):
                 logger.debug(f"Primer {primer}: hairpin predicted.")
@@ -178,7 +184,7 @@ class JackhammerPool:
 
             return True
 
-        return inner_func
+        return interaction_checker
 
     def _sorted_reverse_candidate_pairs(self, fwd: Primer) -> list[PrimerPair]:
         """

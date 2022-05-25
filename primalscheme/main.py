@@ -118,7 +118,6 @@ def check_or_create_outpath(path: pathlib.Path, force: bool = False) -> pathlib.
 @click.option(
     "--repair-interactions/--no-repair-interactions", default=Config.repair_interactions
 )
-@click.option("-v", "-verbose", default=False)
 def main(
     input: list[TextIO],
     **kwargs: Any,
