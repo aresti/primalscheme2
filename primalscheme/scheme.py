@@ -32,8 +32,11 @@ from primalscheme.exceptions import NoReverseWindow
 from primalscheme.primer import Kmer, Insert, Primer, PrimerDirection, PrimerPair
 
 
-def get_window_FAST(kmers: list[Kmer], start: int, end: int) -> list[Kmer]:
-    """Takes a list of Kmers sorted by asending start position and returns kmers within the index window"""
+def get_window_FAST2(kmers: list[Kmer], start: int, end: int) -> list[Kmer]:
+    """
+    This implements a binary search algorithm to return all Kmers that
+    have a start position inclusively between the start and end params.
+    """
     included_kmers: list[Kmer] = []
     n_kmers = len(kmers)
     high = n_kmers - 1
@@ -41,44 +44,33 @@ def get_window_FAST(kmers: list[Kmer], start: int, end: int) -> list[Kmer]:
     mid = 0
     while low <= high:
         mid = (high + low) // 2
-        # If start is greater ignore the left half
-        if kmers[mid].start < start:
-            low = mid + 1
-        # If start is smaller ignore the right half
-        elif kmers[mid].start > start:
-            high = mid - 1
-        # If it is start, make sure it is the first val
-        else:
+        # If the midpoint is inside the range
+        if start <= kmers[mid].start <= end:
             while True:
-                # Walk back untill first value
-                if kmers[mid - 1].start == start:
+                # Walk back until first value, or the first position
+                if mid == 0:
+                    break
+                elif kmers[mid - 1].start >= start:
                     mid -= 1
                 else:
                     break
             # Mid is now the first value so walk forwards
             while True:
-                if kmers[mid].start <= end and mid < n_kmers - 1:
+                if mid < n_kmers and kmers[mid].start <= end:
                     included_kmers.append(kmers[mid])
                     mid += 1
                 else:
                     return included_kmers
-    # At this location the val isn't in the list
-    ## The mid value contains the index of the first value > start if there is a value
-    mid = low
-    if mid >= n_kmers:
-        return included_kmers
-    if kmers[mid].start >= start:
-        while True:
-            if kmers[mid].start <= end and mid <= high:
-                included_kmers.append(kmers[mid])
-                mid += 1
-            else:
-                return included_kmers
-    elif kmers[mid + 1].start >= start:
-        included_kmers.append(kmers[mid + 1])
-        return included_kmers
-    else:
-        return included_kmers
+        # If start is greater ignore the left half
+        elif kmers[mid].start < start:
+            low = mid + 1
+        # If start is smaller ignore the right half
+        elif kmers[mid].start > end:
+            high = mid - 1
+
+    # If the code reaches here there are no Kmers within the list inside the range
+    ## Return an empty list for continuity
+    return []
 
 
 class Scheme:
@@ -142,7 +134,7 @@ class Scheme:
         """
         window = self.reverse_primer_window(fwd, next_pair=next_pair)
 
-        ideal_kmers = get_window_FAST(kmers=self.kmers, start=window[0], end=window[1])
+        ideal_kmers = get_window_FAST2(kmers=self.kmers, start=window[0], end=window[1])
         return ideal_kmers
         # return [k for k in self.kmers if k.start >= window[0] and k.end <= window[1]]
 
