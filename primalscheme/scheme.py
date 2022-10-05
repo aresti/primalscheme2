@@ -32,6 +32,47 @@ from primalscheme.exceptions import NoReverseWindow
 from primalscheme.primer import Kmer, Insert, Primer, PrimerDirection, PrimerPair
 
 
+def get_window_FAST2(kmers: list[Kmer], start: int, end: int) -> list[Kmer]:
+    """
+    This implements a binary search algorithm to return all Kmers that
+    have a start position inclusively between the start and end params.
+    """
+    included_kmers: list[Kmer] = []
+    n_kmers = len(kmers)
+    high = n_kmers - 1
+    low = 0
+    mid = 0
+    while low <= high:
+        mid = (high + low) // 2
+        # If the midpoint is inside the range
+        if start <= kmers[mid].start <= end:
+            while True:
+                # Walk back until first value, or the first position
+                if mid == 0:
+                    break
+                elif kmers[mid - 1].start >= start:
+                    mid -= 1
+                else:
+                    break
+            # Mid is now the first value so walk forwards
+            while True:
+                if mid < n_kmers and kmers[mid].start <= end:
+                    included_kmers.append(kmers[mid])
+                    mid += 1
+                else:
+                    return included_kmers
+        # If start is greater ignore the left half
+        elif kmers[mid].start < start:
+            low = mid + 1
+        # If start is smaller ignore the right half
+        elif kmers[mid].start > end:
+            high = mid - 1
+
+    # If the code reaches here there are no Kmers within the list inside the range
+    ## Return an empty list for continuity
+    return []
+
+
 class Scheme:
     def __init__(
         self,
@@ -92,7 +133,10 @@ class Scheme:
         reverse primer, satisfying amplicon size constraints.
         """
         window = self.reverse_primer_window(fwd, next_pair=next_pair)
-        return [k for k in self.kmers if k.start >= window[0] and k.end <= window[1]]
+
+        ideal_kmers = get_window_FAST2(kmers=self.kmers, start=window[0], end=window[1])
+        return ideal_kmers
+        # return [k for k in self.kmers if k.start >= window[0] and k.end <= window[1]]
 
     def reverse_candidate_pairs(
         self, fwd: Primer, next_pair: Optional[PrimerPair] = None
