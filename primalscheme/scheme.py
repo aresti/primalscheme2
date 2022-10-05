@@ -32,6 +32,55 @@ from primalscheme.exceptions import NoReverseWindow
 from primalscheme.primer import Kmer, Insert, Primer, PrimerDirection, PrimerPair
 
 
+def get_window_FAST(kmers: list[Kmer], start: int, end: int) -> list[Kmer]:
+    """Takes a list of Kmers sorted by asending start position and returns kmers within the index window"""
+    included_kmers: list[Kmer] = []
+    n_kmers = len(kmers)
+    high = n_kmers - 1
+    low = 0
+    mid = 0
+    while low <= high:
+        mid = (high + low) // 2
+        # If start is greater ignore the left half
+        if kmers[mid].start < start:
+            low = mid + 1
+        # If start is smaller ignore the right half
+        elif kmers[mid].start > start:
+            high = mid - 1
+        # If it is start, make sure it is the first val
+        else:
+            while True:
+                # Walk back untill first value
+                if kmers[mid - 1].start == start:
+                    mid -= 1
+                else:
+                    break
+            # Mid is now the first value so walk forwards
+            while True:
+                if kmers[mid].start <= end and mid < n_kmers - 1:
+                    included_kmers.append(kmers[mid])
+                    mid += 1
+                else:
+                    return included_kmers
+    # At this location the val isn't in the list
+    ## The mid value contains the index of the first value > start if there is a value
+    mid = low
+    if mid >= n_kmers:
+        return included_kmers
+    if kmers[mid].start >= start:
+        while True:
+            if kmers[mid].start <= end and mid <= high:
+                included_kmers.append(kmers[mid])
+                mid += 1
+            else:
+                return included_kmers
+    elif kmers[mid + 1].start >= start:
+        included_kmers.append(kmers[mid + 1])
+        return included_kmers
+    else:
+        return included_kmers
+
+
 class Scheme:
     def __init__(
         self,
@@ -92,7 +141,10 @@ class Scheme:
         reverse primer, satisfying amplicon size constraints.
         """
         window = self.reverse_primer_window(fwd, next_pair=next_pair)
-        return [k for k in self.kmers if k.start >= window[0] and k.end <= window[1]]
+
+        ideal_kmers = get_window_FAST(kmers=self.kmers, start=window[0], end=window[1])
+        return ideal_kmers
+        # return [k for k in self.kmers if k.start >= window[0] and k.end <= window[1]]
 
     def reverse_candidate_pairs(
         self, fwd: Primer, next_pair: Optional[PrimerPair] = None
